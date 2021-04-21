@@ -1,0 +1,18 @@
+#lang play
+;
+<prog>   ::= {<fundef>* <expr>}
+ 
+<fundef> ::= {define {<id> <id>*} <expr>}
+ 
+<expr>   ::= <num>
+           | <id>
+           | <bool>           
+           | {<unop> <expr>}
+           | {<binop> <expr> <expr>}
+           | {if <expr> <expr> <expr>}
+           | {with {{<id> <expr>}*} <expr>}
+           | {<id> <expr>*}
+ 
+<unop>   ::= ! | add1 | sub1         
+<binop>  ::= + | - | * | / | && | = | < | ...
+;
