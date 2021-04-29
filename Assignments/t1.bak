@@ -1,18 +1,92 @@
 #lang play
-;
-<prog>   ::= {<fundef>* <expr>}
- 
-<fundef> ::= {define {<id> <id>*} <expr>}
- 
-<expr>   ::= <num>
+
+; <Prog>   ::= {<Fundef>* <Expr>}
+; Program structure.
+; A program is composed of 0 or more FunDefs and a expression.
+; fdefs is a cons -> 
+(deftype Prog
+  (program fdefs expr))
+
+; <FunDef> ::= {define {<id> <id>*} <Expr>}
+; Function definition structure.
+; A function is composed of its name, 0 or more ids and a expression
+(deftype FunDef
+  (fundef fname args expr))
+
+#|-----------------------------
+Expression abstract data type
+
+representation BNF:
+<Expr>   ::= <num>
            | <id>
            | <bool>           
-           | {<unop> <expr>}
-           | {<binop> <expr> <expr>}
-           | {if <expr> <expr> <expr>}
-           | {with {{<id> <expr>}*} <expr>}
-           | {<id> <expr>*}
+           | {<unop> <Expr>}
+           | {<binop> <Expr> <Expr>}
+           | {if <Expr> <Expr> <Expr>}
+           | {with {{<id> <Expr>}*} <Expr>}
+           | {<id> <Expr>*}
+|#
+(deftype Expr
+  (num n)
+  (id x)
+  (bool b)
+  (unop op expr)
+  (binop op l r)
+  (my-if c t-branch f-branch)
+  (with env body)
+  (d-expr id exprs))
+
+
+#|-----------------------------
+Environment abstract data type
  
-<unop>   ::= ! | add1 | sub1         
-<binop>  ::= + | - | * | / | && | = | < | ...
-;
+empty-env  :: Env
+extend-env :: Sym Val Env -> Env
+env-lookup :: Sym Env -> Val
+ 
+representation BNF:
+<env> ::= (mtEnv)
+        | (aEnv <id> <val> <env>)
+|#
+(deftype Env
+  (mtEnv)
+  (aEnv id val rest-env))
+ 
+(def empty-env  (mtEnv))
+ 
+(def extend-env aEnv)
+ 
+(define (env-lookup x env)
+  (match env
+    [(mtEnv) (error 'env-lookup "free identifier: ~a" x)]
+    [(aEnv id val rest)
+     (if (symbol=? id x)
+         val
+         (env-lookup x rest))]))
+
+
+; <Unop>   ::= ! | add1 | sub1  
+(define (parse-unop un)
+  (match un
+    ['! !]
+    ['add1 add1]
+    ['sub1 sub1]))
+
+(define unops (list '! 'add1 'sub1))
+(define (is-unop? x) (member x unop))
+
+; <Binop>  ::= + | - | * | / | && | = | < | ...
+(define (parse-binop bin)
+  (match bin
+    ['+ +]
+    ['- -]
+    ['* *]
+    ['/ /]
+    ['$$ $$]
+    ['|| ||]
+    ['= =]
+    ['< <]
+    ['> >]))
+
+(define binops (list '+ '- '* '/))
+(define (is-binop? x) (member x binops))
