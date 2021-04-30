@@ -36,7 +36,7 @@ representation BNF:
   (binop op l r)
   (expr-if c t-branch f-branch)
   (with id-list body)
-  (app id exprs))
+  (app fname args))
 
 
 #|-----------------------------
@@ -76,7 +76,7 @@ representation BNF:
     ['sub1 sub1]))
 
 (define unops (list '! 'add1 'sub1))
-(define (is-unop? x) (member x unop))
+(define (is-unop? x) (member x unops))
 
 ; <Binop>  ::= + | - | * | / | && | = | < | ...
 ; && and || can be defined with a λ expression directly from the parse
@@ -93,23 +93,22 @@ representation BNF:
 (define binops (list '+ '- '* '/ '= '< '>))
 (define (is-binop? x) (member x binops))
 
-
 ; parse ::= scr -> Expr
 ; Parser function
 (define (parse src)
   (match src
+    ['() '()]
     [(? number?) (num src)]
     [(? symbol?) (id src)]
-    [(? bool?) (bool src)]
+    [(? boolean?) (bool src)]
     [(list (? is-unop? op) expr) (unop (parse-unop op) (parse expr))]
     [(list (? is-binop? op) l r) (binop (parse-binop op) (parse l) (parse r))]
     [(list '&& l r) (binop (λ (x y) (and x y)) (parse l) (parse r))]
     [(list '|| l r) (binop (λ (x y) (or x y)) (parse l) (parse r))]
     [(list 'if c t f) (expr-if (parse c) (parse t) (parse f))]
-    [(list 'with id-list b)
-     (with (list (match id-list
-             [(list id expr rest) ((parse id) (parse expr) (parse rest))]))
-           (parse b))]
-    [(list fname args) (app fname (parse args))]))
+    [(list 'with id-list b) (with (parse id-list) (parse b))]
+    [(list 'define id-list b) (fundef (parse (first id-list)) (parse (rest id-list)) (parse b))]
+    [(? list?) (append (list (parse (first src))) (parse (rest src)))]))
+
 
 
