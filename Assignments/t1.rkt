@@ -34,7 +34,7 @@ representation BNF:
   (bool b)
   (unop op expr)
   (binop op l r)
-  (expr-if c t-branch f-branch)
+  (if-expr c t-branch f-branch)
   (with id-list body)
   (app fname args))
 
@@ -94,10 +94,9 @@ representation BNF:
 (define (is-binop? x) (member x binops))
 
 ; parse ::= scr -> Expr
-; Parser function
+; Parser for the Expr data structure
 (define (parse src)
   (match src
-    ['() '()]
     [(? number?) (num src)]
     [(? symbol?) (id src)]
     [(? boolean?) (bool src)]
@@ -105,10 +104,24 @@ representation BNF:
     [(list (? is-binop? op) l r) (binop (parse-binop op) (parse l) (parse r))]
     [(list '&& l r) (binop (λ (x y) (and x y)) (parse l) (parse r))]
     [(list '|| l r) (binop (λ (x y) (or x y)) (parse l) (parse r))]
-    [(list 'if c t f) (expr-if (parse c) (parse t) (parse f))]
-    [(list 'with id-list b) (with (parse id-list) (parse b))]
-    [(list 'define id-list b) (fundef (parse (first id-list)) (parse (rest id-list)) (parse b))]
-    [(? list?) (append (list (parse (first src))) (parse (rest src)))]))
+    ; if src is an unary or binary operator -> we call the parse-unop/binop
+    ; if src is $$ or ||, we define the operator with a λ expression
+    [(list 'if c t f) (if-expr (parse c) (parse t) (parse f))]
+    [(list 'with id-list b) (with (map parse-cons id-list) (parse b))]
+    ; if src is a with expression, we apply a specific parse on the id-list called
+    ; parse-cons. This parse returns the first element of the pair *raw* (as received
+    ; from the src) and NOT in "((id x) (num n))" form, but in "('x (num n))" instead.
+    [(list 'define args b) (fundef (first args) (rest args) (parse b))]
+    ; if it's a define expresion, we take the first element as the name of the
+    ; new function, the rest of the list as the arguments, and b as the body
+    [(list fname args ...) (app fname (map parse (rest src)))]
+    ; if it's an id followed with Expr*, then it is a function aplication, and the
+    ; rest of the src must be parsed.
+    ))
 
-
+; parse-cons ::= list -> list
+; This parse takes a pair of elements and returns the same pair, with the first
+; element in src form and the second in a Expr form.
+(define (parse-cons pair)
+  (list (first pair) (parse (second pair))))
 
