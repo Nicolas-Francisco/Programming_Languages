@@ -93,11 +93,12 @@ representation BNF:
     ))
 
 
-; parse-cons ::= list -> list
+; parse-cons ::= List[(src) (src)] -> List[(src) (Expr)]
 ; This parse takes a pair of elements and returns the same pair, with the first
 ; element in src form and the second in a Expr form.
 (define (parse-cons pair)
   (list (first pair) (parse (second pair))))
+
 
 ;------------------------------------ PARSER TESTS ------------------------------------;
 ; num case
@@ -130,6 +131,7 @@ representation BNF:
       (app 'sum3 (list (num 1) (num 2) (num 3))))
 ;------------------------------------ PARSER TESTS ------------------------------------;
 
+
 #|-----------------------------
 Environment abstract data type
  
@@ -158,7 +160,7 @@ representation BNF:
          (env-lookup x rest))]))
 
 
-; lookup-fundef :: sym Listof(FunDef) -> FunDef?
+; lookup-fundef :: Sym x Listof[FunDef] -> FunDef?
 ; It receives the name of a function and a list of FunDefs. If there exists a function
 ; with the given name, it returns the definition, if not, it throws an error.
 (define (lookup-fundef f funs)
@@ -170,7 +172,7 @@ representation BNF:
          (lookup-fundef f rest))]))
 
 
-; interp ::= Expr -> Val?
+; interp ::= Expr x List[FunDef] x Env -> Val?
 ; Interpreter for the Expr data structure.
 ; It receives the expresion, a list of fundefs and a enviroment.
 (define (interp expr fundefs env)
@@ -181,22 +183,61 @@ representation BNF:
     ; If the expression is an id, we look for it in the environment.
     [(unop op e) (op (interp e fundefs env))]
     [(binop op l r) (op (interp l fundefs env) (interp r fundefs env))]
-    ; PART 2:
     ; If the expresion is a unary or binary operation, we must verify the types of the
     ; received args and report an error if the operation receives a type error.
-    [(if-expr c tb fb) (if (boolean? (interp c fundefs env))
-                           (if (equal? #t (interp c fundefs env))
-                               (interp tb fundefs env)
-                               (interp fb fundefs env))
-                           (error "Runtime type error: expected Boolean"))]
-    [(with id-list b) (interp b fundefs (extend-env (first id-list) fundefs env))]
-    [(app fname args)
-     (def (fundef _ farg fbody) (lookup-fundef fname fundefs))
-     (interp fbody
-             fundefs
-             (extend-env farg
-                         (interp args fundefs env)
-                         empty-env))]))
+    [(if-expr c tb fb) (if (equal? #t (interp c fundefs env))
+                           (interp tb fundefs env)
+                           (interp fb fundefs env))]
+    [(with id-list b) (interp b fundefs (extend-env-list id-list fundefs env))]
+    ; If we are in the with case, we must extend the enviroment recursively using the
+    ; id-list. To do so, we call a second enviroment extender function but applied to
+    ; this specific case (list of pairs "((id 'x) (num n))" ).
+    [(app fname e)
+     (def (fundef _ args body) (lookup-fundef fname fundefs))
+     (interp body
+             (extend-env-pair args
+                              e 
+                              fundefs
+                              env
+                              empty-env)
+             fundefs)]
+    ; If we are in the app case, we must look for the function in the fundef list, then
+    ; use interp recursively on the body of the definition founded by the look-up, and
+    ; then use the enviroment to substitute the arguments.
+    ; To do so, we have to extend an empty environment that will be the enviroment for
+    ; the function only (lexic scope) calling a third environment extender function but
+    ; applied to this specific case (args as values for the ids of the function def.).
+    ))
+
+
+; extend-env-list ::= List[(id num)] x List[FunDefs] x Env -> Env
+; Extends an enviroment recursively, when it receives a long list (with case).
+(define (extend-env-list id-list fundefs env)
+  (match id-list
+    ['() env]
+    [(? list?) (extend-env-list (rest id-list)
+                                fundefs
+                                (extend-env (first (first id-list))
+                                            (interp (second (first id-list))
+                                                    fundefs
+                                                    env)
+                                            env))]))
+
+
+; extend-env-pair ::= List[(id num)] x List[FunDefs] x Env -> Env
+; Extends an enviroment recursively, when it receives a long list (with case).
+(define (extend-env-pair args expr fundefs main-env fun-env)
+  (match args
+  ['() fun-env]
+  [(? list?) (extend-env-pair (rest args)
+                              (rest expr)
+                              fundefs
+                              main-env
+                              (extend-env (first args)
+                                          (interp (first expr)
+                                                               fundefs
+                                                               main-env)
+                                          fun-env))]))
 
 ;------------------------------------ INTERP TESTS ------------------------------------;
 ; num case
@@ -222,10 +263,27 @@ representation BNF:
 (test (interp (if #f (num 1) (num 2)) '() empty-env)
       2)
 ; with case
-(test (interp (with (list (list 'x 2) (list 'y 2)) (binop + (id 'x) (id 'y))) '() empty-env)
+(test (interp (with (list (list 'x (num 1)) (list 'y (num 2)))
+                    (binop + (id 'x) (id 'y)))
+              '()
+              empty-env)
       3)
-;------------------------------------ PARSER TESTS ------------------------------------;
+(test/exn (interp (with (list (list 'x (num 1)) (list 'y (num 2)))
+                        (binop + (id 'x) (id 'z)))
+                  '()
+                  empty-env)
+          "env-lookup: free identifier: z")
+; app case
+(test/exn (interp (app 'add2 (list (num 1) (num 2)))
+                       '()
+                       empty-env)
+          "function not found: add2")
+;(test (interp (app 'add2 (list (num 1) (num 2)))
+;              ('add2 '(x y) (binop + (id 'x) (id 'y)) '())
+;               empty-env)
+;      3)
+;------------------------------------ INTERP TESTS ------------------------------------;
 
-; run ::= src -> Val?
+; run ::= Prog -> Val?
 (define (run prog [funs '()])
   (interp (parse prog) funs empty-env))
