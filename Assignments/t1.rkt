@@ -293,6 +293,42 @@ representation BNF:
       3)
 ;------------------------------------ INTERP TESTS ------------------------------------;
 
-; run ::= Prog -> Val?
-(define (run prog [funs '()])
-  (interp (parse prog) funs empty-env))
+; run ::= src -> Val?;
+; Runs a program received from the console in src form
+; To do so, we first have to generate the Program in a Prog structure, and then use the
+; interpreter on the parsed expresion. 
+(define (run src)
+  (def (program fundefs expr) (prog-src (parse-src src)))
+  (interp expr fundefs empty-env))
+
+; parse-src ::= src -> List[Expr]
+; This function parses the src expresion into a list of expresions.
+(define (parse-src src)
+  (if (eq? src '())
+      '()
+      (append (list (parse (first src))) (parse-src (rest src)))))
+
+; prog-src ::= List[Expr] x List[FunDef]* x emExpr -> Prog
+; This function generates a program from a list of expresions and functions.
+(define (prog-src list-expr [fundefs '()] [expr empty])
+  (if (eq? list-expr '())
+      (program fundefs expr)
+      (if (fundef? (first list-expr))
+          (prog-src (rest list-expr) (append fundefs (list(first list-expr))) expr)
+          (prog-src (rest list-expr) fundefs (first list-expr)))))
+
+;------------------------------------- RUN  TESTS -------------------------------------;
+; Programa de Ejemplo 1
+(test (run '{{define {sum x y z} {+ x {+ y z}}}
+             {define {max x y} {if {< x y} y x}}
+             {with {{x 9}} {sum {max x 6} 2 -10} }})
+      1)   
+; Programa de Ejemplo 2
+(test (run '{{with {{x 5} {y 7} {z 42}} z}})
+      42)
+; Programa de Ejemplo 3
+(test (run '{{define {triple x} {* 3 x}}
+             {define {add2 x} {+ 2 x}}
+             {add2 {triple 2}}})
+      8)
+;------------------------------------- RUN  TESTS -------------------------------------;
