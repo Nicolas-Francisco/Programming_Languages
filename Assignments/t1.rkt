@@ -47,7 +47,11 @@ representation BNF:
     ['! not]
     ['add1 add1]
     ['sub1 sub1]))
+
+; unops : List[Unop]
 (define unops (list '! 'add1 'sub1))
+
+; is-unop? ::= sym -> boolean
 (define (is-unop? x) (member x unops))
 
 
@@ -62,7 +66,11 @@ representation BNF:
     ['= =]
     ['< <]
     ['> >]))
+
+; unops : List[Binpp]
 (define binops (list '+ '- '* '/ '= '< '>))
+
+; is-binop? ::= sym -> boolean
 (define (is-binop? x) (member x binops))
 
 
@@ -195,12 +203,12 @@ representation BNF:
     [(app fname e)
      (def (fundef _ args body) (lookup-fundef fname fundefs))
      (interp body
+             fundefs
              (extend-env-pair args
                               e 
                               fundefs
                               env
-                              empty-env)
-             fundefs)]
+                              empty-env))]
     ; If we are in the app case, we must look for the function in the fundef list, then
     ; use interp recursively on the body of the definition founded by the look-up, and
     ; then use the enviroment to substitute the arguments.
@@ -278,10 +286,11 @@ representation BNF:
                        '()
                        empty-env)
           "function not found: add2")
-;(test (interp (app 'add2 (list (num 1) (num 2)))
-;              ('add2 '(x y) (binop + (id 'x) (id 'y)) '())
-;               empty-env)
-;      3)
+(test (interp (app 'add2 (list (num 1) (num 2)))
+              (list (fundef 'add2 '(x y) (binop + (id 'x) (id 'y)))
+                    (fundef 'times2 '(x y) (binop * (id 'x) (id 'y))))
+              empty-env)
+      3)
 ;------------------------------------ INTERP TESTS ------------------------------------;
 
 ; run ::= Prog -> Val?
