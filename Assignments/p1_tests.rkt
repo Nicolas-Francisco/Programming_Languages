@@ -1,5 +1,5 @@
 #lang play
-(require "t1.rkt")
+(require "t1-p2.rkt")
 (print-only-errors #t)
 
 ;----------------------------------------------------------------------------------;
@@ -125,3 +125,15 @@
 ; Programa de Ejemplo 9 - if aplication with an operation as condition
 (test (run '{{if {&& #t #f} #t #f}})
       #f)
+; Programa de Ejemplo 10 - Unary expresion with boolean type error
+(test/exn (run '{{add1 #t}})
+          "Runtime type error: expected Number found Boolean")
+; Programa de Ejemplo 11 - Unary expresion with number type error
+(test/exn (run '{{! 1}})
+          "Runtime type error: expected Boolean found Number")
+; Programa de Ejemplo 12 - Binary expresion with boolean type error
+(test/exn (run '{{+ 1 #t}})
+          "Runtime type error: expected Number found Boolean")
+; Programa de Ejemplo 13 - Binary expresion with boolean type error
+(test/exn (run '{{&& 1 #t}})
+          "Runtime type error: expected Boolean found Number")
