@@ -112,11 +112,12 @@ representation BNF:
     ))
 
 
-; parse-cons :: List[(src src)] -> List[(src Expr)]
+; parse-with :: List[(src src)] -> List[(src Expr)]
 ; This parse takes a pair of elements and returns the same pair, with the first
 ; element in src form and the second in a Expr form.
 (define (parse-with pair)
   (list (first pair) (parse (second pair))))
+
 
 #|-----------------------------
 Environment abstract data type
@@ -227,20 +228,35 @@ representation BNF:
                                           fun-env))]))
 
 
-; run :: src -> Val?;
-; Runs a program received from the console in src form
+; run :: src boolean -> Val?;
+; Runs a program received from the console in src form.
 ; To do so, we first have to generate the Program in a Prog structure, and then
-; use the interpreter on the parsed expresion. 
+; use the interpreter on the parsed expresion.
+;
+; The boolean determines which segment of the assignment we want to run. If the
+; boolean is #true, we run the P1 segment (without typechecking), but if the boolean
+; is #false, then we run the P2 segment (with the typechecking).
 (define (run src)
   (def (program fundefs expr) (prog-parse (map parse src)))
   (interp expr fundefs empty-env))
 
 
-; prog-src :: List[Expr] x List[FunDef]* x emExpr -> Prog
+; prog-src :: List[Expr] x [List[FunDef]] x [emExpr] -> Prog
 ; This function generates a program from a list of expresions and functions.
 (define (prog-parse list-expr [fundefs '()] [expr empty])
-  (if (eq? list-expr '())
-      (program fundefs expr)
-      (if (fundef? (first list-expr))
-          (prog-parse (rest list-expr) (append fundefs (list(first list-expr))) expr)
-          (prog-parse (rest list-expr) fundefs (first list-expr)))))
+  (match list-expr
+    ['() (program fundefs expr)]
+    ; If it's an empty list, we return a program immediately
+    [(cons (? Expr? e) rest-expr) (prog-parse (rest list-expr)
+                                              fundefs
+                                              e)]
+    ; If the first element of the list is a expression, then we call the prog-src
+    ; recursively on the rest of the list, with an not-empty expression.
+    [(? list?) (prog-parse (rest list-expr)
+                           (append fundefs (list (first list-expr)))
+                           expr)]
+    ; If the first element of the list is NOT a expression, then we know it must
+    ; be a function definition because of the parser.
+    ; We just have to add this function to the function list and call prog-src
+    ; recursively on the rest of the list.
+    ))
