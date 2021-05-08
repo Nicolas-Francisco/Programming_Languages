@@ -19,35 +19,11 @@
   (program fdefs expr))
 
 
-; <FunDef> ::= {define {<id> <id>*} [<type>] <Expr>}
+; <FunDef> ::= {define {<id> <id>*} <Expr>}
 ; Function definition data structure.
 ; A function is composed of its name, 0 or more ids as argument and a expression
 (deftype FunDef
-  (fundef fname args type expr))
-
-
-; <Arg> ::= <id> | {<id> : <Type>}
-; Argument data structure.
-; An argument can be a simple id or an id with type annotation
-(deftype Arg
-  (arg-any id)
-  (arg-type id type))
-
-
-; <Type> :: Num | Bool | Any
-(deftype Type
-  (Num)
-  (Bool)
-  (Any))
-
-
-; parse-type :: src -> Type
-; A parser for the type received.
-(define (parse-type type)
-  (match type
-    ['Num Num]
-    ['Bool Bool]
-    ['Any Any]))
+  (fundef fname args expr))
 
 
 #|-----------------------------
@@ -60,7 +36,7 @@ representation BNF:
            | {<unop> <Expr>}
            | {<binop> <Expr> <Expr>}
            | {if <Expr> <Expr> <Expr>}
-           | {with {{<id> [: <type>] <Expr>}*} <Expr>}
+           | {with {{<id> <Expr>}*} <Expr>}
            | {<id> <Expr>*}
 |#
 (deftype Expr
@@ -124,45 +100,23 @@ representation BNF:
     [(list 'if c t f) (if-expr (parse c) (parse t) (parse f))]
     [(list 'with id-list b) (with (map parse-with id-list) (parse b))]
     ; if src is a with expression, we apply a specific parse on the id-list called
-    ; parse-args that matches the type received (or not) with the real type.
-    [(list 'define args ': type body ...) (fundef (car args)
-                                                  (map parse-args (cdr args))
-                                                  (parse-type type)
-                                                  (parse body))]
-    [(list 'define args body ...) (fundef (car args)
-                                          (map parse-args (cdr args))
-                                          (parse-type 'Any)
-                                          (parse body))]
+    ; parse-with. This parse returns the first element of the pair *raw* (tha same
+    ; received from src) and NOT in "((id x) (num n))" form, but in
+    ; "('x (num n))" form instead.
+    [(list 'define args b) (fundef (first args) (rest args) (parse b))]
     ; if it's a define expresion, we take the first element as the name of the
-    ; new function, the rest of the list as the arguments with it's own types,
-    ; and two different cases dependig if in the define we are specifing the type.
-    ; If we have [: src], then we parse the type and give it to the fundef, if it
-    ; does not have [: src], we use parse the Any type.
-    [(list fname args ...) (app fname (map parse args))]
+    ; new function, the rest of the list as the arguments, and b as the body
+    [(list fname ...) (app (first src) (map parse (rest src)))]
     ; if it's an id followed with Expr*, then it is a function aplication, and
     ; the rest of the src must be parsed.
     ))
 
 
-; parse-with :: List[(src [: src] src)] -> List[(src Type Expr)]
-; This parse takes a list of elements and returns the same list, with the first
-; element in src form, the second as a Type form (Any by defect) and the third
-; element as the value of the id.
-; The function returns three values in src, type and expr form.
-(define (parse-with id-list)
-  (match id-list
-    ['() '()]
-    [(list id ': type expr) (list id (parse-type type) (parse expr))]
-    [(list id expr) (list id (parse-type 'Any) (parse expr))]))
-
-
-; parse-args :: List[(src Type)] -> Arg
-; This parse takes a list of arguments from the function definition and transforms
-; it into a Argument data structure
-(define (parse-args args)
-  (match args
-    [(cons id '()) (arg-any id)]
-    [(cons id type) (arg-type id (parse-type type))]))
+; parse-with :: List[(src src)] -> List[(src Expr)]
+; This parse takes a pair of elements and returns the same pair, with the first
+; element in src form and the second in a Expr form.
+(define (parse-with pair)
+  (list (first pair) (parse (second pair))))
 
 
 #|-----------------------------
@@ -199,7 +153,7 @@ representation BNF:
 (define (lookup-fundef f funs)
   (match funs
     ['() (error 'lookup-fundef "function not found: ~a" f)]
-    [(cons (and fd (fundef fn _ _ _)) rest)
+    [(cons (and fd (fundef fn _ _)) rest)
      (if (symbol=? fn f)
          fd
          (lookup-fundef f rest))]))
@@ -306,7 +260,7 @@ representation BNF:
                                           fun-env))]))
 
 
-; run :: src boolean -> Val?;
+; run :: src boolean -> Val?
 ; Runs a program received from the console in src form.
 ; To do so, we first have to generate the Program in a Prog structure, and then
 ; use the interpreter on the parsed expresion.
@@ -338,33 +292,3 @@ representation BNF:
     ; We just have to add this function to the function list and call prog-src
     ; recursively on the rest of the list.
     ))
-
-
-; typecheck :: Prog -> Type?
-; checkea los tipos de datos de la expresion parseada
-(define (typecheck prog)
-  (match prog-expr
-    [(num n) Num]
-    [(bool b) Bool]
-    [(id x) (let (env-lookup x env) ())]
-    ; If the expression is an id, we look for it in the environment.
-    [(unop op e) (verify-unop op e fundefs env)]
-    [(binop op l r) (verify-binop op l r fundefs env)]
-    ; If the expresion is a unary or binary operation, we must verify the types of
-    ; the received args and report an error if the operation receives a type error.
-    [(if-expr c tb fb) (if (equal? #t (interp c fundefs env))
-                           (interp tb fundefs env)
-                           (interp fb fundefs env))]
-    [(with id-list b) (interp b fundefs (extend-env-list id-list fundefs env))]
-    ; If we are in the with case, we must extend the enviroment recursively using
-    ; the id-list. To do so, we call a second enviroment extender function but
-    ; applied to this specific case (list of pairs "((id 'x) (num n))" ).
-    [(app fname e)
-     (def (fundef _ args body) (lookup-fundef fname fundefs))
-     (interp body
-             fundefs
-             (extend-env-pair args
-                              e 
-                              fundefs
-                              env
-                              empty-env))]))

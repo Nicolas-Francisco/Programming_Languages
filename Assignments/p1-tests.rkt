@@ -1,5 +1,5 @@
 #lang play
-(require "t1-p2.rkt")
+(require "t1.rkt")
 (print-only-errors #t)
 
 ;----------------------------------------------------------------------------------;
@@ -7,7 +7,7 @@
                         CC4101 - LENGUAJES DE PROGRAMACIÓN
                                      TAREA 1
 
-                              Profesor: Éric Tanter                 
+                             Profesor: Éric Tanter
                      Auxiliares: Bryan Ortiz - Tomas Vallejos
                          Estudiante: Nicolás García Ríos
 |#
@@ -35,15 +35,8 @@
       (if-expr (id 'c) (binop + (num 1) (num 2)) (binop + (num 3) (num 4))))
 ; with case
 (test (parse '{with {{x 5} {y 7} {z 42}} z})   
-      (with (list (list (arg-any 'x) (num 5))
-                  (list (arg-any 'y) (num 7))
-                  (list (arg-any 'z) (num 42)))
+      (with (list (list 'x (num 5)) (list 'y (num 7)) (list 'z (num 42)))
             (id 'z)))
-
-(test (parse '{with {{x : Num 5} {y : Num 10}} {+ x y}})
-      (with (list (list (arg-type 'x 'Num) (num 5))
-                  (list (arg-type 'y 'Num) (num 10)))
-            (binop + (id 'x) (id 'y))))
 ; define case
 (test (parse '{define {sum3 x y z} {+ {+ x y} z}})
       (fundef 'sum3 '(x y z) (binop + (binop + (id 'x) (id 'y)) (id 'z))))

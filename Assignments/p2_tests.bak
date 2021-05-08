@@ -134,6 +134,6 @@
 ; Programa de Ejemplo 12 - Binary expresion with boolean type error
 (test/exn (run '{{+ 1 #t}})
           "Runtime type error: expected Number found Boolean")
-; Programa de Ejemplo 13 - Binary expresion with boolean type error
+; Programa de Ejemplo 13 - Binary expresion with number type error
 (test/exn (run '{{&& 1 #t}})
           "Runtime type error: expected Boolean found Number")
