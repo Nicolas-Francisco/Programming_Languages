@@ -125,20 +125,20 @@ representation BNF:
     [(list 'with id-list b) (with (map parse-with id-list) (parse b))]
     ; if src is a with expression, we apply a specific parse on the id-list called
     ; parse-args that matches the type received (or not) with the real type.
-    [(list 'define args ': type body ...) (fundef (car args)
-                                                  (map parse-args (cdr args))
-                                                  (parse-type type)
-                                                  (parse body))]
-    [(list 'define args body ...) (fundef (car args)
-                                          (map parse-args (cdr args))
-                                          (parse-type 'Any)
-                                          (parse body))]
+    [(list 'define args ': type body) (fundef (first args)
+                                              (map parse-args (rest args))
+                                              (parse-type type)
+                                              (parse body))]
+    [(list 'define args body) (fundef (first args)
+                                      (map parse-args (rest args))
+                                      (parse-type 'Any)
+                                      (parse body))]
     ; if it's a define expresion, we take the first element as the name of the
     ; new function, the rest of the list as the arguments with it's own types,
     ; and two different cases dependig if in the define we are specifing the type.
     ; If we have [: src], then we parse the type and give it to the fundef, if it
     ; does not have [: src], we use parse the Any type.
-    [(list fname args ...) (app fname (map parse args))]
+    [(list fname args ...) (app (first src) (map parse (rest src)))]
     ; if it's an id followed with Expr*, then it is a function aplication, and
     ; the rest of the src must be parsed.
     ))
@@ -160,9 +160,9 @@ representation BNF:
 ; This parse takes a list of arguments from the function definition and transforms
 ; it into a Argument data structure
 (define (parse-args args)
-  (match args
-    [(cons id '()) (arg-any id)]
-    [(list id ': type) (arg-type id (parse-type type))]))
+  (if (list? args)
+      (arg-type (first args) (parse-type (third args)))
+      (arg-any args)))
 
 
 #|-----------------------------
@@ -195,11 +195,11 @@ representation BNF:
 
 (define (env-lookup-type x env)
   (match env
-    [(mtEnv) (error 'env-lookup "free identifier: ~a" x)]
+    [(mtEnv) (error 'env-lookup-type "free identifier: ~a" x)]
     [(aEnv id type val rest)
      (if (symbol=? id x)
          type
-         (env-lookup x rest))]))
+         (env-lookup-type x rest))]))
 
 
 ; lookup-fundef :: Sym x Listof[FunDef] -> FunDef?
@@ -349,65 +349,65 @@ representation BNF:
     ))
 
 
-; num-bool-op? :: <Unop> | <Binop> -> boolean
+; num-bool-op? :: <Binop> -> boolean
 ; operators that receive numbers but return a boolean
-(define num-bool-op (list < > =))
-(define (num-bool-op? op) (member num-bool-op))
+(define num-bool-ops (list < > =))
+(define (is-num-bool-op? op) (member op num-bool-ops))
 
 
 ; typeof :: Expr -> Type?
 ; checks the type of an expression
 (define (typeof expr fundefs env)
   (match expr
-    [(num _) (Num)]
-    [(bool _) (Bool)]
+    [(num _) Num]
+    [(bool _) Bool]
     [(id x) (env-lookup-type x env)]
     ; If the expression is an id, we look for it in the environment.
     [(unop op expr) (if (num-op? op)
                         (let ([tl (typeof expr fundefs env)])
-                          (if (equal? (Bool) tl)
+                          (if (equal? Bool tl)
                               (error "Static type error: expected Num found Bool")
-                              (Num)))
+                              Num))
                         (let ([tl (typeof expr fundefs env)])
-                          (if (equal? (Num) tl)
+                          (if (equal? Num tl)
                               (error "Static type error: expected Bool found Num")
-                              (Bool))))]
+                              Bool)))]
     [(binop op l r) (if (num-op? op)
                         (let ([tl (typeof l fundefs env)]
                               [tr (typeof r fundefs env)])
-                          (if (or (equal? (Bool) tl) (equal? (Bool) tr))
+                          (if (or (equal? Bool tl) (equal? Bool tr))
                               (error "Static type error: expected Num found Bool")
-                              (if (num-bool-op? op)
-                                  (Bool)
-                                  (Num))))
+                              (if (is-num-bool-op? op)
+                                  Bool
+                                  Num)))
                         (let ([tl (typeof l fundefs env)]
                               [tr (typeof r fundefs env)])
-                          (if (or (equal? (Num) tl) (equal? (Num) tr))
+                          (if (or (equal? Num tl) (equal? Num tr))
                               (error "Static type error: expected Bool found Num")
-                              (Bool))))]
+                              Bool)))]
     ; If the expresion is a unary or binary operation, we must verify the types of
     ; the received args and report an error if the operation receives a type error.
-    [(if-expr c tb fb) (if (equal? (Bool) (typeof c fundefs env))
+    [(if-expr c tb fb) (if (equal? Bool (typeof c fundefs env))
                            (let ([tt (typeof tb fundefs env)]
-                                 [tf (typeof tb fundefs env)])
-                             (if (or (and (equal? (Bool) tt)
-                                          (equal? (Num) tf))
-                                     (and (equal? (Num) tt)
-                                          (equal? (Bool) tf)))
+                                 [tf (typeof fb fundefs env)])
+                             (if (or (and (equal? Bool tt)
+                                          (equal? Num tf))
+                                     (and (equal? Num tt)
+                                          (equal? Bool tf)))
                                  (error
                                   "Static type error: different types on branches")
-                                 (if (or (equal? (Any) tt) (equal? (Any) tf))
-                                     (Any)
-                                     (tt))))
+                                 (if (or (equal? Any tt) (equal? Any tf))
+                                     Any
+                                     tt)))
                            (error "Static type error: expected Bool found Num"))]
     ; If it's an if expression, we must check if the condition has a Bool type, then
     ; if the types of both branches are the same, and return Any type if one of the
     ; branches has an Any type.
     [(with id-list body) (if (typeof-with id-list fundefs env)
-                          (typeof body
-                                  fundefs
-                                  (extend-env-with id-list fundefs mtEnv))
-                          (error "Static type error: id types does not match"))]
+                             (typeof body
+                                     fundefs
+                                     (extend-env-with id-list fundefs mtEnv))
+                             (error "Static type error: id types does not match"))]
     ; If we are in the with expression, we first check if all the types of the
     ; expression received in the id-list match with the declared type. If one of
     ; arguments fails, we throw an static error.
@@ -421,42 +421,39 @@ representation BNF:
     ; arguments received in the id-list match with the declared type. If one of
     ; arguments fails, we throw an static error. If all the arguments match, we
     ; only have to return the type of the function.
-    ;[(prog func-list expr) (if (typecheck-fundefs func-list)
-    ;                           (typeof expr func-list empty-env)
-    ;                           (error "Funcion mal definida"))]
-    ; ???
     ))
 
 
 ; typeof-with :: List[(src type expr)] x List[FunDef] x Env -> boolean
 ; Checks if the type of every element of the id-list matches with it's expression.
-(define (typeof-with id-list fundefs env)
-  (match id-list
+(define (typeof-with list fundefs env)
+  (match list
     ['() #t]
-    [(cons (list id type expr) rest) (if (or (equal? type
-                                                     (typeof expr fundefs env))
-                                             (equal? (Any)
-                                                     (typeof expr fundefs env)))
-                                         (typeof-with rest fundefs env)
-                                         #f)]))
+    [(cons (list id type expr) rest)
+     (if (or (equal? (type) (typeof expr fundefs env))
+             (equal? Any (typeof expr fundefs env))
+             (equal? Any (type)))
+         (typeof-with rest fundefs env)
+         #f)]))
 
 
 ; typeof-app :: List[Expr] x  List[Expr] x List[FunDef] x Env -> boolean
 ; Checks if the type of every element of the argument list matches with the type
 ; of the expression.
 (define (typeof-app args expr fundefs env)
-  (match args
-    ['() (if (equal? '() expr) #t #f)]
-    [(cons arg rest) (if (or (equal? (typeof arg fundefs env)
-                                     (typeof (first expr) fundefs env))
-                             (equal? (or (equal? (Any) (typeof arg
-                                                               fundefs
-                                                               env))
-                                         (equal? (Any) (typeof (first expr)
-                                                               fundefs
-                                                               env)))))
-                         (typeof-app rest (cdr expr) fundefs env)
-                         #f)]))
+  (if (eq? (length args) (length expr))
+      (match args
+        ['() #t]
+        [(? list?)
+         (if (arg-type?(first args))
+             (let ([tl (typeof (first expr) fundefs env)])
+               (if (or (eq? tl Any) (eq? tl (arg-type-type (first args))))
+                   (typeof-app (rest args) (rest expr) fundefs env)
+                   (if (eq? (arg-type-type (first args)) Num)
+                       (error "Static type error: expected Num found Bool")
+                       (error "Static type error: expected Bool found Num"))))
+             (typeof-app (rest args) (rest expr)))])
+      (error "Static type error: given wrong amount of arguments")))
 
 
 ; extend-env-with :: List[(src type expr)] x List[FunDef] x Env -> Env
@@ -464,9 +461,15 @@ representation BNF:
 (define (extend-env-with id-list fundefs env)
   (match id-list
     ['() env]
-    [(cons (list id type expr) rest) (extend-env-with rest
-                                                      fundefs
-                                                      (extend-env id
-                                                                  type
-                                                                  expr
-                                                                  env))]))
+    [(? list?) (let ([te (typeof (third (first id-list)) fundefs env)])
+                 (if (or (and (eq? te Num)
+                              (eq? (second (first id-list)) Bool))
+                         (and (eq? te Bool)
+                              (eq? (second (first id-list)) Num)))
+                     (error "Static type error: given wrong type of arguments")
+                     (extend-env-with (rest id-list)
+                                      (extend-env (first (first id-list))
+                                                  te
+                                                  (second (first id-list))
+                                                  env)
+                                      fundefs)))]))

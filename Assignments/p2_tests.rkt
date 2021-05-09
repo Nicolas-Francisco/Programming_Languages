@@ -14,7 +14,7 @@
 ;----------------------------------------------------------------------------------;
 
 
-;---------------------------------- PARSER TESTS ----------------------------------;
+;---------------------------------- PARSER TESTS ----------------------------------; 
 ; num case
 (test (parse 1)
       (num 1))
@@ -35,112 +35,91 @@
       (if-expr (id 'c) (binop + (num 1) (num 2)) (binop + (num 3) (num 4))))
 ; with case
 (test (parse '{with {{x 5} {y 7} {z 42}} z})   
-      (with (list (list (arg-any 'x) (num 5))
-                  (list (arg-any 'y) (num 7))
-                  (list (arg-any 'z) (num 42)))
+      (with (list (list 'x Any (num 5))
+                  (list 'y Any (num 7))
+                  (list 'z Any (num 42)))
             (id 'z)))
 
 (test (parse '{with {{x : Num 5} {y : Num 10}} {+ x y}})
-      (with (list (list (arg-type 'x 'Num) (num 5))
-                  (list (arg-type 'y 'Num) (num 10)))
+      (with (list (list 'x Num (num 5))
+                  (list 'y Num (num 10)))
             (binop + (id 'x) (id 'y))))
 ; define case
 (test (parse '{define {sum3 x y z} {+ {+ x y} z}})
-      (fundef 'sum3 '(x y z) (binop + (binop + (id 'x) (id 'y)) (id 'z))))
+      (fundef 'sum3
+              (list (arg-any 'x) (arg-any 'y) (arg-any 'z))
+              Any
+              (binop + (binop + (id 'x) (id 'y)) (id 'z))))
 ; app case
 (test (parse '{sum3 1 2 3})
       (app 'sum3 (list (num 1) (num 2) (num 3))))
 
-;---------------------------------- INTERP TESTS ----------------------------------;
+;--------------------------------- TYPEOF  TESTS ---------------------------------;
 ; num case
-(test (interp (num 1) '() empty-env)
-      1)
-; bool case
-(test (interp (bool #t) '() empty-env)
-      #t)
+(test (typeof (num 1) '() (mtEnv))
+      Num)
 ; id case
-(test/exn (interp (id 'x) '() empty-env)
-      "free identifier: x")
-(test (interp (id 'x) '() (aEnv 'x 1 empty-env))
-      1)
+(test (typeof (id 'x) '() (aEnv 'x Num 5 mtEnv))
+      Num)
+(test/exn (typeof (id 'x) '() (mtEnv))
+          "env-lookup-type: free identifier: x")
+; bool case
+(test (typeof (bool #t) '() (mtEnv))
+      Bool)
 ; unop case
-(test (interp (unop not (bool #t)) '() empty-env)
-      #f)
-; binop case
-(test (interp (binop + (num 1) (num 2)) '() empty-env)
-      3)
-; if case
-(test (interp (if #t (num 1) (num 2)) '() empty-env)
-      1)
-(test (interp (if #f (num 1) (num 2)) '() empty-env)
-      2)
-; with case
-(test (interp (with (list (list 'x (num 1)) (list 'y (num 2)))
-                    (binop + (id 'x) (id 'y)))
-              '()
-              empty-env)
-      3)
-(test/exn (interp (with (list (list 'x (num 1)) (list 'y (num 2)))
-                        (binop + (id 'x) (id 'z)))
-                  '()
-                  empty-env)
-          "env-lookup: free identifier: z")
-; app case
-(test/exn (interp (app 'add2 (list (num 1) (num 2)))
-                       '()
-                       empty-env)
-          "function not found: add2")
-(test (interp (app 'add2 (list (num 1) (num 2)))
-              (list (fundef 'add2 '(x y) (binop + (id 'x) (id 'y)))
-                    (fundef 'times2 '(x y) (binop * (id 'x) (id 'y))))
-              empty-env)
-      3)
+(test (typeof (parse'{! #t}) '()  (mtEnv))
+      Bool)
+(test/exn (typeof (parse '{! 5}) '()  (mtEnv))
+          "Static type error: expected Bool found Num")
 
-;----------------------------------- RUN  TESTS -----------------------------------;
-; Programa de Ejemplo 1 (enunciado)
-(test (run '{{define {sum x y z} {+ x {+ y z}}}
-             {define {max x y} {if {< x y} y x}}
-             {with {{x 9}} {sum {max x 6} 2 -10} }})
-      1)   
-; Programa de Ejemplo 2 (enunciado)
-(test (run '{{with {{x 5} {y 7} {z 42}} z}})
-      42)
-; Programa de Ejemplo 3 (enunciado)
-(test (run '{{define {triple x} {* 3 x}}
-             {define {add2 x} {+ 2 x}}
-             {add2 {triple 2}}})
-      8)
-; Programa de Ejemplo 4 - undefined function call
-(test/exn (run '{{sum 1 2 3}})
-          "function not found: sum")
-; Programa de Ejemplo 5 - free identifier
-(test/exn (run '{{define {triple x} {* 3 x}}
-                 {triple x}})
-          "env-lookup: free identifier: x")
-; Programa de Ejemplo 6 - app aplication using with
-(test (run '{{define {triple x} {* 3 x}}
-             {with {{x 3}} {triple x}}})
-      9)
-; Programa de Ejemplo 7 - if aplication on true branch
-(test (run '{{define {triple x} {* 3 x}}
-             {if {< 1 2} {triple 3} {triple 4}}})
-      9)
-; Programa de Ejemplo 8 - if aplication on false branch
-(test (run '{{define {triple x} {* 3 x}}
-             {if {< 2 1} {triple 3} {triple 4}}})
-      12)
-; Programa de Ejemplo 9 - if aplication with an operation as condition
-(test (run '{{if {&& #t #f} #t #f}})
-      #f)
-; Programa de Ejemplo 10 - Unary expresion with boolean type error
-(test/exn (run '{{add1 #t}})
-          "Runtime type error: expected Number found Boolean")
-; Programa de Ejemplo 11 - Unary expresion with number type error
-(test/exn (run '{{! 1}})
-          "Runtime type error: expected Boolean found Number")
-; Programa de Ejemplo 12 - Binary expresion with boolean type error
-(test/exn (run '{{+ 1 #t}})
-          "Runtime type error: expected Number found Boolean")
-; Programa de Ejemplo 13 - Binary expresion with number type error
-(test/exn (run '{{&& 1 #t}})
-          "Runtime type error: expected Boolean found Number")
+; binop case
+(test (typeof (parse '{+ 2 3}) '() (mtEnv))
+      Num)
+(test (typeof (binop + (num 1) (num 2)) '() (mtEnv))
+      Num)
+(test/exn (typeof (parse '{+ #f 3})  '()  (mtEnv))
+          "Static type error: expected Num found Bool")
+(test/exn (typeof (parse '{&& #f 3}) '()  (mtEnv))
+          "Static type error: expected Bool found Num")
+(test/exn (typeof (parse '{> 10 #t}) '()  (mtEnv))
+          "Static type error: expected Num found Bool")
+
+; if case
+(test (typeof (parse'{if #t #t #t}) '() (mtEnv))
+      Bool)
+(test/exn (typeof (parse '{if 1 #t #t}) '() (mtEnv))
+          "Static type error: expected Bool found Num")
+(test/exn (typeof (parse '{if #t 1 #t}) '() (mtEnv))
+          "Static type error: different types")
+
+; with case
+(test (typeof (parse '{with {{x 5} {y : Bool #f} {z #f}} (&& y z)})
+              '()
+              (mtEnv))
+      Bool)
+(test/exn (typeof (parse '{with {{x 5} {y : Bool #f} {z #f}} (+ y z)})
+                  '()
+                  (mtEnv))
+          "Static type error: id types does not match")
+(test/exn (typeof (parse '{with {{x 5} {y : Bool #f} {z #f}} (&& x z)})
+                  '()
+                  (mtEnv))
+          "Static type error: id types does not match")
+
+; define case
+(test/exn (typeof (parse '{one #t})
+                  (list (parse '{define {one {x : Num}} 1}))
+                  (mtEnv))
+          "Static type error: expected Num found Bool")
+(test (typeof (parse '{one 4})
+              (list (parse '{define {one {x : Num}} 1}))
+              (mtEnv))
+      Any)
+(test (typeof (parse '{one 4})
+              (list (parse '{define {one {x : Num}} : Num 1}))
+              (mtEnv))
+      Num)
+(test (typeof (parse '{f {> 3 4}})
+              (list (parse '{define {f {p : Bool}} {&& p {! p}}}))
+              (mtEnv))
+      Any)
