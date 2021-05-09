@@ -95,16 +95,16 @@
 ; with case
 (test (typeof (parse '{with {{x 5} {y : Bool #f} {z #f}} (&& y z)})
               '()
-              (mtEnv))
+              mtEnv)
       Bool)
 (test/exn (typeof (parse '{with {{x 5} {y : Bool #f} {z #f}} (+ y z)})
                   '()
-                  (mtEnv))
-          "Static type error: id types does not match")
+                  mtEnv)
+          "Static type error: expected Num found Bool")
 (test/exn (typeof (parse '{with {{x 5} {y : Bool #f} {z #f}} (&& x z)})
                   '()
-                  (mtEnv))
-          "Static type error: id types does not match")
+                  mtEnv)
+          "Static type error: expected Bool found Num")
 
 ; define case
 (test/exn (typeof (parse '{one #t})

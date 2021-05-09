@@ -430,9 +430,9 @@ representation BNF:
   (match list
     ['() #t]
     [(cons (list id type expr) rest)
-     (if (or (equal? (type) (typeof expr fundefs env))
+     (if (or (equal? type (typeof expr fundefs env))
              (equal? Any (typeof expr fundefs env))
-             (equal? Any (type)))
+             (equal? Any type))
          (typeof-with rest fundefs env)
          #f)]))
 
@@ -468,8 +468,8 @@ representation BNF:
                               (eq? (second (first id-list)) Num)))
                      (error "Static type error: given wrong type of arguments")
                      (extend-env-with (rest id-list)
+                                      fundefs
                                       (extend-env (first (first id-list))
                                                   te
                                                   (second (first id-list))
-                                                  env)
-                                      fundefs)))]))
+                                                  env))))]))
