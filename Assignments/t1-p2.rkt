@@ -162,34 +162,43 @@ representation BNF:
 (define (parse-args args)
   (match args
     [(cons id '()) (arg-any id)]
-    [(cons id type) (arg-type id (parse-type type))]))
+    [(list id ': type) (arg-type id (parse-type type))]))
 
 
 #|-----------------------------
 Environment abstract data type
  
 empty-env  :: Env
-extend-env :: Sym Val Env -> Env
+extend-env :: Sym Type Val Env -> Env
 env-lookup :: Sym Env -> Val
+env-lookup-type :: Sym Env -> Type
  
 representation BNF:
 <env> ::= (mtEnv)
-        | (aEnv <id> <val> <env>)
+        | (aEnv <id> <type> <val> <env>)
 |#
 (deftype Env
   (mtEnv)
-  (aEnv id val rest-env))
+  (aEnv id type val rest-env))
  
-(def empty-env  (mtEnv))
+(def empty-env (mtEnv))
  
 (def extend-env aEnv)
  
 (define (env-lookup x env)
   (match env
     [(mtEnv) (error 'env-lookup "free identifier: ~a" x)]
-    [(aEnv id val rest)
+    [(aEnv id type val rest)
      (if (symbol=? id x)
          val
+         (env-lookup x rest))]))
+
+(define (env-lookup-type x env)
+  (match env
+    [(mtEnv) (error 'env-lookup "free identifier: ~a" x)]
+    [(aEnv id type val rest)
+     (if (symbol=? id x)
+         type
          (env-lookup x rest))]))
 
 
@@ -258,7 +267,7 @@ representation BNF:
     ; the id-list. To do so, we call a second enviroment extender function but
     ; applied to this specific case (list of pairs "((id 'x) (num n))" ).
     [(app fname e)
-     (def (fundef _ args body) (lookup-fundef fname fundefs))
+     (def (fundef _ args _ body) (lookup-fundef fname fundefs))
      (interp body
              fundefs
              (extend-env-pair args
@@ -340,31 +349,63 @@ representation BNF:
     ))
 
 
-; typecheck :: Prog -> Type?
-; checkea los tipos de datos de la expresion parseada
-(define (typecheck prog)
-  (match prog-expr
-    [(num n) Num]
-    [(bool b) Bool]
-    [(id x) (let (env-lookup x env) ())]
+; num-bool-op? :: <Unop> | <Binop> -> boolean
+; operators that receive numbers but return a boolean
+(define num-bool-op (list < > =))
+(define (num-bool-op? op) (member num-bool-op))
+
+
+; typeof :: Expr -> Type?
+; checks the type of an expression
+(define (typeof expr fundefs env)
+  (match expr
+    [(num _) Num]
+    [(bool _) Bool]
+    [(id x) (env-lookup-type x env)]
     ; If the expression is an id, we look for it in the environment.
-    [(unop op e) (verify-unop op e fundefs env)]
-    [(binop op l r) (verify-binop op l r fundefs env)]
+    [(unop op expr) (if (num-op? op)
+                        (let ([tl (typeof expr fundefs env)])
+                          (if (Bool? tl)
+                              (error "Static type error: expected Num found Bool")
+                              Num))
+                        (let ([tl (typeof expr fundefs env)])
+                          (if (Num? tl)
+                              (error "Static type error: expected Bool found Num")
+                              Bool)))]
+    [(binop op l r) (if (num-op? op)
+                        (let ([tl (typeof l fundefs env)]
+                              [tr (typeof r fundefs env)])
+                          (if (or (Bool? tl) (Bool? tr))
+                              (error "Static type error: expected Num found Bool")
+                              (if (num-bool-op? op)
+                                  Bool
+                                  Num)))
+                        (let ([tl (typeof l fundefs env)]
+                              [tr (typeof r fundefs env)])
+                          (if (or (Num? tl) (Num? tr))
+                              (error "Static type error: expected Bool found Num")
+                              Bool)))]
     ; If the expresion is a unary or binary operation, we must verify the types of
     ; the received args and report an error if the operation receives a type error.
-    [(if-expr c tb fb) (if (equal? #t (interp c fundefs env))
-                           (interp tb fundefs env)
-                           (interp fb fundefs env))]
-    [(with id-list b) (interp b fundefs (extend-env-list id-list fundefs env))]
-    ; If we are in the with case, we must extend the enviroment recursively using
-    ; the id-list. To do so, we call a second enviroment extender function but
-    ; applied to this specific case (list of pairs "((id 'x) (num n))" ).
-    [(app fname e)
-     (def (fundef _ args body) (lookup-fundef fname fundefs))
-     (interp body
-             fundefs
-             (extend-env-pair args
-                              e 
-                              fundefs
-                              env
-                              empty-env))]))
+    [(if-expr c tb fb) (if (Bool? (typeof c fundefs env))
+                           (let ([tt (typeof tb fundefs env)]
+                                 [tf (typeof tb fundefs env)])
+                             (if (or (and (Bool? tt) (Num? tf))
+                                     (and (Num? tt) (Bool? tf)))
+                                 (error
+                                  "Static type error: different types on branches")
+                                 (if (or (Any? tt) (Any? tf))
+                                     (Any)
+                                     (tt))))
+                           (error "Static type error: expected Bool found Num"))]
+    [(with expr body) (if (typecheck-args expr fundefs env)
+                          (typeof body fundefs (ext-env-with expr env fundefs))
+                          (error "Static type error: id types does not match"))]
+    [(app f e) (def (fundef fname args type body) (lookup-fundef f fundefs))
+               (if (typecheck-app args e)
+                   type
+                   (error "Static type error: argument types does not match"))]))
+    ;[(prog func-list expr) (if (typecheck-fundefs func-list)
+     ;                          (typeof expr func-list empty-env)
+      ;                         (error "Funcion mal definida"))]))
+
