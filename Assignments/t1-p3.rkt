@@ -19,19 +19,20 @@
   (program fdefs expr))
 
 
-; <FunDef> ::= {define {<id> <arg>*} [<type>] <Expr>}
+; <FunDef> ::= {define {<id> <Arg>*} [<type>] <Expr>}
 ; Function definition data structure.
 ; A function is composed of its name, 0 or more ids as argument and a expression
 (deftype FunDef
   (fundef fname args type expr))
 
 
-; <Arg> ::= <id> | {<id> : <Type>}
+; <Arg> ::= <id> | {<id> : <Type>} | {<id> [: <Type>] @ <contract>}
 ; Argument data structure.
 ; An argument can be a simple id or an id with type annotation
 (deftype Arg
   (arg-any id)
-  (arg-type id type))
+  (arg-type id type)
+  (arg-cont id type contract))
 
 
 ; <Type> :: Num | Bool | Any
@@ -156,13 +157,16 @@ representation BNF:
     [(list id expr) (list id (parse-type 'Any) (parse expr))]))
 
 
-; parse-args :: List[(src Type)] -> Arg
+; parse-args :: List[(src [: src] [@ src])] -> Arg
 ; This parse takes a list of arguments from the function definition and transforms
 ; it into a Argument data structure
 (define (parse-args args)
-  (if (list? args)
-      (arg-type (first args) (parse-type (third args)))
-      (arg-any args)))
+  (match args
+    ['() '()]
+    [(list x ': type @ contract rest-id) (arg-cont x (parse-type type) contract)]
+    [(list x '@ contract rest-id) (arg-cont x (parse-type 'Any) contract)]
+    [(list x ': type rest-id) (arg-type x (parse-type type))]
+    [(? symbol?) (arg-any args)]))
 
 
 #|-----------------------------
@@ -268,16 +272,19 @@ representation BNF:
     ; applied to this specific case (list of pairs "((id 'x) (num n))" ).
     [(app fname e)
      (def (fundef _ args _ body) (lookup-fundef fname fundefs))
-     (interp body
-             fundefs
-             (extend-env-app args
-                              e 
-                              fundefs
-                              env
-                              empty-env))]
+     (if (check-contract args e fundef env)
+         (interp body
+                 fundefs
+                 (extend-env-app args
+                                 e 
+                                 fundefs
+                                 env
+                                 mtEnv))
+         (error "Runtime contract error: unsatisfied contract"))]
     ; If we are in the app case, we must look for the function in the fundef list,
-    ; then use interp recursively on the body of the definition founded by the
-    ; look-up, and then use the enviroment to substitute the arguments.
+    ; check if all the contracts (if there is any) are satisfied, then use interp
+    ; recursively on the body of the definition founded by the look-up, and then
+    ; use the enviroment to substitute the arguments.
     ; To do so, we have to extend an empty environment that will be the enviroment
     ; for the function only (lexic scope) calling a third environment extender
     ; function but applied to this specific case (args as values for the ids of
@@ -322,6 +329,23 @@ representation BNF:
                                              Any
                                              (interp (first expr) fundefs main-env)
                                              main-env)))]))
+
+
+; check-contract :: List[Args] x List[Expr] x List[FunDef] x Env -> boolean
+; checks if all the contracts of the list of arguments are satisfied. If all of the
+; contracts are satisfied (or there is no contract to satisfy at all) we return true.
+; By the other hand, if at least one contract is violated the function returns false.
+(define (check-contract args expr fundefs env)
+  (match args
+    ['() #t]
+    [(cons arg rest)
+     (if (arg-cont? arg)
+         (let ([c (arg-cont-contract arg)])
+           (if (interp (app (list c (first expr))) fundef env)
+               (check-contract rest (cdr expr) fundefs env)
+               (error "Runtime contract error: <~a> does not satisfy <~a>"
+                      (first expr) c)))
+         (check-contract rest (cdr expr) fundefs env))]))
 
 
 ; num-bool-op? :: <Binop> -> boolean
@@ -429,7 +453,16 @@ representation BNF:
                    (if (equal? Num (arg-type-type (first args)))
                        (error "Static type error: expected Num found Bool")
                        (error "Static type error: expected Bool found Num"))))
-             (typeof-app (rest args) (rest expr) fundefs env))])
+             (if (arg-cont? (first args))
+                 (let ([tl (typeof (first expr) fundefs env)])
+                   (if (or (equal? Any tl)
+                           (equal? tl (arg-cont-type (first args)))
+                           (equal? Any (arg-cont-type (first args))))
+                       (typeof-app (rest args) (rest expr) fundefs env)
+                       (if (equal? Num (arg-cont-type (first args)))
+                           (error "Static type error: expected Num found Bool")
+                           (error "Static type error: expected Bool found Num"))))
+                 (typeof-app (rest args) (rest expr) fundefs env)))])
       (error "Static type error: given wrong amount of arguments")))
 
 

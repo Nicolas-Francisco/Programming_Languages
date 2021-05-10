@@ -19,7 +19,7 @@
   (program fdefs expr))
 
 
-; <FunDef> ::= {define {<id> <arg>*} [<type>] <Expr>}
+; <FunDef> ::= {define {<id> <id>*} [<type>] <Expr>}
 ; Function definition data structure.
 ; A function is composed of its name, 0 or more ids as argument and a expression
 (deftype FunDef
@@ -452,37 +452,6 @@ representation BNF:
                                                   env))))]))
 
 
-; extend-env-args :: List[Arg] x [Env] -> Env
-; This function extend a temporal environment in order to check if the functions
-; match the types of the body and the declared type.
-(define (extend-env-args args [env mtEnv])
-  (match args
-    ['() env]
-    [(cons arg rest) (if (arg-type? arg)
-                         (extend-env-args rest
-                                          (extend-env (arg-type-id arg)
-                                                      (arg-type-type arg)
-                                                      empty
-                                                      env))
-                         (extend-env-args rest
-                                          (extend-env (arg-any-id arg)
-                                                      Any
-                                                      empty
-                                                      env)))]))
-
-
-; typeof-fundef :: FunDef x [List[FunDef]] x [Env] -> boolean?
-; Checks if the types of the functions defined match with it's bodies.
-(define (typeof-fundef fun [fundefs '()] [env mtEnv])
-   (let ([tb (typeof (fundef-expr fun) fundefs (extend-env-args (fundef-args fun)))])
-     (if (or (and (eq? (fundef-type fun) Num)
-                  (eq? tb Bool))
-             (and (eq? (fundef-type fun) Bool)
-                  (eq? tb Num)))
-         (error "Static type error: function type declared mismatch body type")
-         #t)))
-
-
 ; run :: src -> Val?
 ; Runs a program received from the console in src form.
 ; To do so, we first have to generate the Program in a Prog structure, and then
@@ -517,7 +486,6 @@ representation BNF:
 ; This functions typecheks if there is a static error in the program
 (define (typecheck src)
   (def (program fundefs expr) (prog-parse (map parse src)))
-  (map typeof-fundef fundefs)
   (typeof expr fundefs mtEnv))
 
 
