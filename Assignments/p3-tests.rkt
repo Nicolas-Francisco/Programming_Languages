@@ -130,20 +130,77 @@
 
 ;---------------------------------  RUN  TESTS  ---------------------------------;
 
-; programa de ejemplo 1 (enunciado)
-(test (run-typecheck '{{with {{x : Num 5} {y : Num 10}} {+ x y}}})
-      15)
+; tipo declarado Num en vez de Bool
+(test/exn (run-typecheck '{{define {gt10 x} : Num {+ x 10}}
+                           {define {positive {x @ gt10}} : Num {- x 10}}
+                           {positive 15}})
+          "Static contract error: invalid type for gt10")
 
-; programa de ejemplo 2 (enunciado)
-(test (run-typecheck '{{define {gt42 x} : Bool {> x 42}} {gt42 43}})
-      #t)
+; tipo declarado Any en vez de Bool
+(test/exn (run-typecheck '{{define {gt10 x} : Any {+ x 10}}
+                           {define {positive {x @ gt10}} : Num {- x 10}}
+                           {positive 15}})
+          "Static contract error: invalid type for gt10")
 
-; programa de ejemplo 3 (enunciado)
-(test (run-typecheck '{{define {id {x : Num}} x} {id 5}})
+; tipo no declarado
+(test/exn (run-typecheck '{{define {gt10 x} {+ x 10}}
+                           {define {positive {x @ gt10}} : Num {- x 10}}
+                           {positive 15}})
+          "Static contract error: invalid type for gt10")
+
+; recibe mas de un argumento
+(test/exn (run-typecheck '{{define {gt10 x y} : Bool {> x 10}}
+                           {define {positive {x @ gt10}} : Num {- x 10}}
+                           {positive 15}})
+          "Static contract error: invalid type for gt10")
+
+; argumento de tipo Num
+(test/exn (run-typecheck '{{define {gt10 {x : Num}} : Bool {> x 10}}
+                           {define {positive {x @ gt10}} : Num {- x 10}}
+                           {positive 15}})
+          "Static contract error: invalid type for gt10")
+
+; argumento de tipo Bool
+(test/exn (run-typecheck '{{define {gt10 {x : Bool}} : Bool {&& x #f}}
+                           {define {positive {x @ gt10}} : Num {- x 10}}
+                           {positive 15}})
+          "Static contract error: invalid type for gt10")
+
+; argumento de tipo Any funciona
+(test (run-typecheck '{{define {gt10 {x : Any}} : Bool {> x 10}}
+                       {define {positive {x @ gt10}} : Num {- x 10}}
+                       {positive 15}})
       5)
 
-; programa de ejemplo 4 (enunciado)
-(test/exn (run-typecheck '{{define {add2 {x : Num}} {+ x 2}}
-                           {with {{oops #f}}
-                                 {add2 oops}}})
-          "Runtime type error: expected Number found Boolean")
+; argumento sin tipo definido funciona
+(test (run-typecheck '{{define {gt10 x} : Bool {> x 10}}
+                       {define {positive {x @ gt10}} : Num {- x 10}}
+                       {positive 15}})
+      5)
+
+; Contract broken in runtime
+(test/exn (run-typecheck '{{define {gt10 x} : Bool {> x 10}}
+         {define {positive {x @ gt10}} : Num {- x 10}}
+         {positive 5}})
+          "Runtime contract error: x does not satisfy gt10")
+
+; Contract broken in runtime
+(test/exn (run-typecheck '{{define {add x y} : Num {+ x y}}
+                           {define {oh-no {x @ add} y}
+                            #t}
+                           {oh-no 21 21}})
+          "Static contract error: invalid type for add")
+
+(test (run-typecheck '{{define {positive x} : Bool {> x 0}}
+                       {define {div {x : Num @ positive} y}
+                         {/ y x}}
+                       {div 5 3}})
+      3/5)
+
+(test (run-typecheck '{{define {lt100 x} {< x 100}}
+                       {define {positive x} : Bool {> x 0}}
+                       {define {percentage? x} : Bool {&& {lt100 x} {positive x}}}
+                       {define {calc {x @ positive} {y @ percentage?}}
+                         {/ {* y y} x}}
+                       {calc 25 3}})
+      9/25)
