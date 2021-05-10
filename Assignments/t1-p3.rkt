@@ -271,15 +271,13 @@ representation BNF:
     ; applied to this specific case (list of pairs "((id 'x) (num n))" ).
     [(app fname e)
      (def (fundef _ args _ body) (lookup-fundef fname fundefs))
-     (if (check-contract args e fundef env)
-         (interp body
-                 fundefs
-                 (extend-env-app args
-                                 e 
-                                 fundefs
-                                 env
-                                 mtEnv))
-         (error "Runtime contract error: unsatisfied contract"))]
+     (interp body
+             fundefs
+             (extend-env-app args
+                             e
+                             fundefs
+                             env
+                             mtEnv))]
     ; If we are in the app case, we must look for the function in the fundef list,
     ; check if all the contracts (if there is any) are satisfied, then use interp
     ; recursively on the body of the definition founded by the look-up, and then
@@ -320,6 +318,15 @@ representation BNF:
                                              (arg-type-type (first args))
                                              (interp (first expr) fundefs main-env)
                                              main-env))
+                 (if (arg-cont? (first args))
+                 (extend-env-app (rest args)
+                                 (rest expr)
+                                 fundefs
+                                 main-env
+                                 (extend-env (arg-cont-id (first args))
+                                             (arg-cont-type (first args))
+                                             (interp (first expr) fundefs main-env)
+                                             main-env))
                  (extend-env-app (rest args)
                                  (rest expr)
                                  fundefs
@@ -327,7 +334,7 @@ representation BNF:
                                  (extend-env (arg-any-id (first args))
                                              Any
                                              (interp (first expr) fundefs main-env)
-                                             main-env)))]))
+                                             main-env))))]))
 
 
 ; num-bool-op? :: <Binop> -> boolean
@@ -439,7 +446,7 @@ representation BNF:
     [(cons arg rest)
      (if (arg-cont? arg)
          (let ([c (arg-cont-contract arg)])
-           (if (interp (app (list c (first expr))) fundef env)
+           (if (interp (app  c (first expr)) fundef env)
                (check-contract rest (cdr expr) fundefs env)
                (error "Runtime contract error: <~a> does not satisfy <~a>"
                       (first expr) c)))
@@ -464,24 +471,14 @@ representation BNF:
                        (error "Static type error: expected Num found Bool")
                        (error "Static type error: expected Bool found Num"))))
              (if (arg-cont? (first args))
-                 (if (is-contract (lookup-fundef (arg-cont-contract (first args))
-                                                 fundefs))
-                     (if (contract-check (fundef-args
-                                          (lookup-fundef
-                                           (arg-cont-contract
-                                            (first args))
-                                           fundefs))
-                                         expr fundefs env)
-                         (let ([tl (typeof (first expr) fundefs env)])
-                           (if (or (equal? Any tl)
-                                   (equal? tl (arg-cont-type (first args)))
-                                   (equal? Any (arg-cont-type (first args))))
-                               (typeof-app (rest args) (rest expr) fundefs env)
-                               (if (equal? Num (arg-cont-type (first args)))
-                                   (error "Static type error: expected Num found Bool")
-                                   (error "Static type error: expected Bool found Num"))))
-                         (error "Static contract error: invalid type for <contract>"))
-                     (error "Static contract error: invalid type for <contract>"))
+                 (let ([tl (typeof (first expr) fundefs env)])
+                   (if (or (equal? Any tl)
+                           (equal? tl (arg-cont-type (first args)))
+                           (equal? Any (arg-cont-type (first args))))
+                       (typeof-app (rest args) (rest expr) fundefs env)
+                       (if (equal? Num (arg-cont-type (first args)))
+                           (error "Static type error: expected Num found Bool")
+                           (error "Static type error: expected Bool found Num"))))
                  (typeof-app (rest args) (rest expr) fundefs env)))])
       (error "Static type error: given wrong amount of arguments")))
 
@@ -618,6 +615,7 @@ representation BNF:
   (let ([type (typecheck src)])
     (interp expr fundefs mtEnv)))
 
-(run-typecheck '{{define {gt10 x} : Num {+ x 10}} ; tipo declarado Num en vez de Bool
+
+(run-typecheck '{{define {gt10 x} : Num {+ x 10}}
          {define {positive {x @ gt10}} : Num {- x 10}}
          {positive 15}})
