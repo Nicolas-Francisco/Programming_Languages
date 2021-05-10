@@ -97,11 +97,15 @@
               '()
               mtEnv)
       Bool)
+(test (typeof (parse '{with {{x 5} {y : Bool #f} {z #f}} (&& x z)})
+                  '()
+                  mtEnv)
+      Bool)
 (test/exn (typeof (parse '{with {{x 5} {y : Bool #f} {z #f}} (+ y z)})
                   '()
                   mtEnv)
           "Static type error: expected Num found Bool")
-(test/exn (typeof (parse '{with {{x 5} {y : Bool #f} {z #f}} (&& x z)})
+(test/exn (typeof (parse '{with {{x : Num 5} {y : Bool #f} {z #f}} (&& x z)})
                   '()
                   mtEnv)
           "Static type error: expected Bool found Num")
@@ -113,7 +117,7 @@
           "Static type error: expected Num found Bool")
 (test (typeof (parse '{one 4})
               (list (parse '{define {one {x : Num}} 1}))
-              (mtEnv))
+              mtEnv)
       Any)
 (test (typeof (parse '{one 4})
               (list (parse '{define {one {x : Num}} : Num 1}))
@@ -123,3 +127,23 @@
               (list (parse '{define {f {p : Bool}} {&& p {! p}}}))
               (mtEnv))
       Any)
+
+;---------------------------------  RUN  TESTS  ---------------------------------;
+
+; programa de ejemplo 1 (enunciado)
+(test (run-typecheck '{{with {{x : Num 5} {y : Num 10}} {+ x y}}})
+      15)
+
+; programa de ejemplo 2 (enunciado)
+(test (run-typecheck '{{define {gt42 x} : Bool {> x 42}} {gt42 43}})
+      #t)
+
+; programa de ejemplo 3 (enunciado)
+(test (run-typecheck '{{define {id {x : Num}} x} {id 5}})
+      5)
+
+; programa de ejemplo 4 (enunciado)
+(test/exn (run-typecheck '{{define {add2 {x : Num}} {+ x 2}}
+                           {with {{oops #f}}
+                                 {add2 oops}}})
+          "Runtime type error: expected Number found Boolean")

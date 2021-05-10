@@ -270,7 +270,7 @@ representation BNF:
      (def (fundef _ args _ body) (lookup-fundef fname fundefs))
      (interp body
              fundefs
-             (extend-env-pair args
+             (extend-env-app args
                               e 
                               fundefs
                               env
@@ -285,7 +285,7 @@ representation BNF:
     ))
 
 
-; extend-env-list :: List[(id num)] x List[FunDefs] x Env -> Env
+; extend-env-list :: List[(id type num)] x List[FunDefs] x Env -> Env
 ; Extends an enviroment recursively, when it receives a long list (with case).
 (define (extend-env-list id-list fundefs env)
   (match id-list
@@ -293,60 +293,35 @@ representation BNF:
     [(? list?) (extend-env-list (rest id-list)
                                 fundefs
                                 (extend-env (first (first id-list))
-                                            (interp (second (first id-list))
+                                            (second (first id-list))
+                                            (interp (third (first id-list))
                                                     fundefs
                                                     env)
                                             env))]))
 
 
-; extend-env-pair :: List[(id num)] x List[FunDefs] x Env -> Env
+; extend-env-app :: List[(id type num)] x List[FunDefs] x Env -> Env
 ; Extends an enviroment recursively, when it receives a long list (with case).
-(define (extend-env-pair args expr fundefs main-env fun-env)
+(define (extend-env-app args expr fundefs main-env fun-env)
   (match args
   ['() fun-env]
-  [(? list?) (extend-env-pair (rest args)
-                              (rest expr)
-                              fundefs
-                              main-env
-                              (extend-env (first args)
-                                          (interp (first expr)
-                                                  fundefs
-                                                  main-env)
-                                          fun-env))]))
-
-
-; run :: src boolean -> Val?;
-; Runs a program received from the console in src form.
-; To do so, we first have to generate the Program in a Prog structure, and then
-; use the interpreter on the parsed expresion.
-;
-; The boolean determines which segment of the assignment we want to run. If the
-; boolean is #true, we run the P1 segment (without typechecking), but if the boolean
-; is #false, then we run the P2 segment (with the typechecking).
-(define (run src)
-  (def (program fundefs expr) (prog-parse (map parse src)))
-  (interp expr fundefs empty-env))
-
-
-; prog-parse :: List[Expr] x [List[FunDef]] x [emExpr] -> Prog
-; This function generates a program from a list of expresions and functions.
-(define (prog-parse list-expr [fundefs '()] [expr empty])
-  (match list-expr
-    ['() (program fundefs expr)]
-    ; If it's an empty list, we return a program immediately
-    [(cons (? Expr? e) rest-expr) (prog-parse (rest list-expr)
-                                              fundefs
-                                              e)]
-    ; If the first element of the list is a expression, then we call the prog-src
-    ; recursively on the rest of the list, with an not-empty expression.
-    [(? list?) (prog-parse (rest list-expr)
-                           (append fundefs (list (first list-expr)))
-                           expr)]
-    ; If the first element of the list is NOT a expression, then we know it must
-    ; be a function definition because of the parser.
-    ; We just have to add this function to the function list and call prog-src
-    ; recursively on the rest of the list.
-    ))
+  [(? list?) (if (arg-type? (first args))
+                 (extend-env-app (rest args)
+                                 (rest expr)
+                                 fundefs
+                                 main-env
+                                 (extend-env (arg-type-id (first args))
+                                             (arg-type-type (first args))
+                                             (interp (first expr) fundefs main-env)
+                                             main-env))
+                 (extend-env-app (rest args)
+                                 (rest expr)
+                                 fundefs
+                                 main-env
+                                 (extend-env (arg-any-id (first args))
+                                             Any
+                                             (interp (first expr) fundefs main-env)
+                                             main-env)))]))
 
 
 ; num-bool-op? :: <Binop> -> boolean
@@ -445,14 +420,16 @@ representation BNF:
       (match args
         ['() #t]
         [(? list?)
-         (if (arg-type?(first args))
+         (if (arg-type? (first args))
              (let ([tl (typeof (first expr) fundefs env)])
-               (if (or (eq? tl Any) (eq? tl (arg-type-type (first args))))
+               (if (or (equal? Any tl)
+                       (equal? tl (arg-type-type (first args)))
+                       (equal? Any (arg-type-type (first args))))
                    (typeof-app (rest args) (rest expr) fundefs env)
-                   (if (eq? (arg-type-type (first args)) Num)
+                   (if (equal? Num (arg-type-type (first args)))
                        (error "Static type error: expected Num found Bool")
                        (error "Static type error: expected Bool found Num"))))
-             (typeof-app (rest args) (rest expr)))])
+             (typeof-app (rest args) (rest expr) fundefs env))])
       (error "Static type error: given wrong amount of arguments")))
 
 
@@ -470,6 +447,54 @@ representation BNF:
                      (extend-env-with (rest id-list)
                                       fundefs
                                       (extend-env (first (first id-list))
-                                                  te
                                                   (second (first id-list))
+                                                  te
                                                   env))))]))
+
+
+; run :: src -> Val?
+; Runs a program received from the console in src form.
+; To do so, we first have to generate the Program in a Prog structure, and then
+; use the interpreter on the parsed expresion.
+(define (run src)
+  (def (program fundefs expr) (prog-parse (map parse src)))
+  (interp expr fundefs mtEnv))
+
+
+; prog-parse :: List[Expr] x [List[FunDef]] x [emExpr] -> Prog
+; This function generates a program from a list of expresions and functions.
+(define (prog-parse list-expr [fundefs '()] [expr empty])
+  (match list-expr
+    ['() (program fundefs expr)]
+    ; If it's an empty list, we return a program immediately
+    [(cons (? Expr? e) rest-expr) (prog-parse (rest list-expr)
+                                              fundefs
+                                              e)]
+    ; If the first element of the list is a expression, then we call the prog-src
+    ; recursively on the rest of the list, with an not-empty expression.
+    [(? list?) (prog-parse (rest list-expr)
+                           (append fundefs (list (first list-expr)))
+                           expr)]
+    ; If the first element of the list is NOT a expression, then we know it must
+    ; be a function definition because of the parser.
+    ; We just have to add this function to the function list and call prog-src
+    ; recursively on the rest of the list.
+    ))
+
+
+; typecheck :: src -> Type?
+; This functions typecheks if there is a static error in the program
+(define (typecheck src)
+  (def (program fundefs expr) (prog-parse (map parse src)))
+  (typeof expr fundefs mtEnv))
+
+
+; run-typecheck :: src -> Val?;
+; Runs a program received from the console in src form using a typecheker.
+; To do so, we first have to generate the Program in a Prog structure, then use
+; the typecheck function to check if there is any static error, and finally it
+; uses the interpreter on the parsed expresion.
+(define (run-typecheck src)
+  (def (program fundefs expr)(prog-parse (map parse src)))
+  (let ([type (typecheck src)])
+    (interp expr fundefs mtEnv)))
