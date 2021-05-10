@@ -1,5 +1,5 @@
 #lang play
-(require "t1-p2.rkt")
+(require "t1.rkt")
 (print-only-errors #t)
 
 ;----------------------------------------------------------------------------------;
@@ -129,21 +129,83 @@
       Any)
 
 ;---------------------------------  RUN  TESTS  ---------------------------------;
-
 ; programa de ejemplo 1 (enunciado)
-(test (run-typecheck '{{with {{x : Num 5} {y : Num 10}} {+ x y}}})
-      15)
-
+(test (run '{{define {positive x} : Bool {> x 0}}
+                       {define {div {x : Num @ positive} y}
+                         {/ y x}}
+                       {div 5 3}} #t)
+      3/5)
 ; programa de ejemplo 2 (enunciado)
-(test (run-typecheck '{{define {gt42 x} : Bool {> x 42}} {gt42 43}})
-      #t)
-
+(test (run '{{define {positive x} : Bool {> x 0}}
+                       {define {div {x @ positive} y}
+                         {/ y x}}
+                       {div 5 3}} #t)
+      3/5)
 ; programa de ejemplo 3 (enunciado)
-(test (run-typecheck '{{define {id {x : Num}} x} {id 5}})
+(test (run '{{define {lt100 x} {< x 100}}
+                       {define {positive x} : Bool {> x 0}}
+                       {define {percentage? x} : Bool {&& {lt100 x} {positive x}}}
+                       {define {calc {x @ positive} {y @ percentage?}}
+                         {/ {* y y} x}}
+                       {calc 25 3}} #t)
+      9/25)
+; programa de ejemplo 4 (enunciado)
+(test/exn (run '{{define {add x y} : Num {+ x y}}
+                           {define {oh-no {x @ add} y}
+                            #t}
+                           {oh-no 21 21}} #t)
+          "Static contract error: invalid type for add")
+
+; programa de ejemplo 5 : Declared Any instead of Bool
+(test/exn (run '{{define {gt10 x} : Any {+ x 10}}
+                           {define {positive {x @ gt10}} : Num {- x 10}}
+                           {positive 15}} #t)
+          "Static contract error: invalid type for gt10")
+
+; programa de ejemplo 6 : Declared Num instead of Bool
+(test/exn (run '{{define {gt10 x} : Num {+ x 10}}
+                           {define {positive {x @ gt10}} : Num {- x 10}}
+                           {positive 15}} #t)
+          "Static contract error: invalid type for gt10")
+
+; programa de ejemplo 7 : Undeclared type
+(test/exn (run '{{define {gt10 x} {+ x 10}}
+                           {define {positive {x @ gt10}} : Num {- x 10}}
+                           {positive 15}} #t)
+          "Static contract error: invalid type for gt10")
+
+; programa de ejemplo 8 : received wrong amount of args
+(test/exn (run '{{define {gt10 x y} : Bool {> x 10}}
+                           {define {positive {x @ gt10}} : Num {- x 10}}
+                           {positive 15}} #t)
+          "Static contract error: invalid type for gt10")
+
+;  programa de ejemplo 9 : typed any
+(test (run '{{define {gt10 {x : Any}} : Bool {> x 10}}
+                       {define {positive {x @ gt10}} : Num {- x 10}}
+                       {positive 15}} #t)
       5)
 
-; programa de ejemplo 4 (enunciado)
-(test/exn (run-typecheck '{{define {add2 {x : Num}} {+ x 2}}
-                           {with {{oops #f}}
-                                 {add2 oops}}})
-          "Runtime type error: expected Number found Boolean")
+;  programa de ejemplo 10 : typed Num
+(test/exn (run '{{define {gt10 {x : Num}} : Bool {> x 10}}
+                           {define {positive {x @ gt10}} : Num {- x 10}}
+                           {positive 15}} #t)
+          "Static contract error: invalid type for gt10")
+
+;  programa de ejemplo 11 : typed Bool
+(test/exn (run '{{define {gt10 {x : Bool}} : Bool {&& x #f}}
+                           {define {positive {x @ gt10}} : Num {- x 10}}
+                           {positive 15}} #t)
+          "Static contract error: invalid type for gt10")
+
+;  programa de ejemplo 12 : no type defined
+(test (run '{{define {gt10 x} : Bool {> x 10}}
+                       {define {positive {x @ gt10}} : Num {- x 10}}
+                       {positive 15}} #t)
+      5)
+
+;  programa de ejemplo 13 : Runtime contract error
+(test/exn (run '{{define {gt10 x} : Bool {> x 10}}
+         {define {positive {x @ gt10}} : Num {- x 10}}
+         {positive 5}} #t)
+          "Runtime contract error: x does not satisfy gt10")

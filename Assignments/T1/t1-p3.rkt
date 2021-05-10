@@ -36,6 +36,7 @@
 
 
 ; <Type> :: Num | Bool | Any
+; type data structure
 (deftype Type
   (Num)
   (Bool)
@@ -87,6 +88,7 @@ representation BNF:
 (define unops (list '! 'add1 'sub1))
 
 ; is-unop? :: sym -> boolean
+; checks if a symbol is a unary operator
 (define (is-unop? x) (member x unops))
 
 
@@ -104,10 +106,11 @@ representation BNF:
     ['&& (λ (x y) (and x y))]
     ['|| (λ (x y) (or x y))]))
 
-; unops : List[Binpp]
+; unops : List[Binop]
 (define binops (list '+ '- '* '/ '= '< '> '&& '||))
 
 ; is-binop? :: sym -> boolean
+; checks if a symbol is a binary operator
 (define (is-binop? x) (member x binops))
 
 
@@ -175,7 +178,10 @@ empty-env  :: Env
 extend-env :: Sym Type Val Env -> Env
 env-lookup :: Sym Env -> Val
 env-lookup-type :: Sym Env -> Type
- 
+
+We can extend the previously known Environment in order to
+store the types of the ids.
+
 representation BNF:
 <env> ::= (mtEnv)
         | (aEnv <id> <type> <val> <env>)
@@ -218,6 +224,7 @@ representation BNF:
 
 
 ; num-op? :: <Unop> | <Binop> -> boolean
+; Checks if a unary or binary operator receives pure numeric arguments
 (define num-op (list add1 sub1 + - * / < > =))
 (define (num-op? op) (member op num-op))
 
@@ -273,11 +280,11 @@ representation BNF:
      (def (fundef _ args _ body) (lookup-fundef fname fundefs))
      (if (check-contract-interp args e fundefs env)
          (interp body
-             fundefs
-             (extend-env-app args
-                             e
-                             fundefs
-                             env))
+                 fundefs
+                 (extend-env-app args
+                                 e
+                                 fundefs
+                                 env))
          (error "Runtime contract error: <v> does not satisfy <contract>"))]
     ; If we are in the app case, we must look for the function in the fundef list,
     ; check if all the contracts (if there is any) are satisfied, then use interp
@@ -306,7 +313,7 @@ representation BNF:
 
 
 ; extend-env-app :: List[(id type num)] x List[FunDefs] x Env -> Env
-; Extends an enviroment recursively, when it receives a long list (with case).
+; Extends an enviroment recursively, when it receives a long list (app case).
 (define (extend-env-app args expr fundefs main-env)
   (match args
   ['() main-env]
@@ -354,7 +361,7 @@ representation BNF:
 
 
 ; num-bool-op? :: <Binop> -> boolean
-; operators that receive numbers but return a boolean
+; checks if the operator received gets numbers but returns a boolean
 (define num-bool-ops (list < > =))
 (define (is-num-bool-op? op) (member op num-bool-ops))
 
@@ -567,15 +574,6 @@ representation BNF:
                    (contract-check-static (cdr args) fundefs))]))
 
 
-; run :: src -> Val?
-; Runs a program received from the console in src form.
-; To do so, we first have to generate the Program in a Prog structure, and then
-; use the interpreter on the parsed expresion.
-(define (run src)
-  (def (program fundefs expr) (prog-parse (map parse src)))
-  (interp expr fundefs mtEnv))
-
-
 ; prog-parse :: List[Expr] x [List[FunDef]] x [emExpr] -> Prog
 ; This function generates a program from a list of expresions and functions.
 (define (prog-parse list-expr [fundefs '()] [expr empty])
@@ -605,12 +603,14 @@ representation BNF:
   (typeof expr fundefs mtEnv))
 
 
-; run-typecheck :: src -> Val?
-; Runs a program received from the console in src form using a typecheker.
+; run :: src [boolean]-> Val?
+; Runs a program received from the console in src form
 ; To do so, we first have to generate the Program in a Prog structure, then use
-; the typecheck function to check if there is any static error, and finally it
-; uses the interpreter on the parsed expresion.
-(define (run-typecheck src)
+; the typecheck function to check if there is any static error (if the user throws
+; true), and finally it uses the interpreter on the parsed expresion.
+(define (run src [check #f])
   (def (program fundefs expr) (prog-parse (map parse src)))
-  (let ([type (typecheck src)])
-    (interp expr fundefs mtEnv)))
+  (if check
+      (let ([type (typecheck src)])
+        (interp expr fundefs mtEnv))
+      (interp expr fundefs mtEnv)))
