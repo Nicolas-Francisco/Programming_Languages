@@ -160,13 +160,12 @@ representation BNF:
 ; parse-args :: List[(src [: src] [@ src])] -> Arg
 ; This parse takes a list of arguments from the function definition and transforms
 ; it into a Argument data structure
-(define (parse-args args)
-  (match args
-    ['() '()]
-    [(list x ': type @ contract rest-id) (arg-cont x (parse-type type) contract)]
-    [(list x '@ contract rest-id) (arg-cont x (parse-type 'Any) contract)]
-    [(list x ': type rest-id) (arg-type x (parse-type type))]
-    [(? symbol?) (arg-any args)]))
+(define (parse-args arg)
+  (match arg
+    [(list x ': type @ contract) (arg-cont x (parse-type type) contract)]
+    [(list x '@ contract) (arg-cont x (parse-type 'Any) contract)]
+    [(list x ': type) (arg-type x (parse-type type))]
+    [(? symbol?) (arg-any arg)]))
 
 
 #|-----------------------------
@@ -331,23 +330,6 @@ representation BNF:
                                              main-env)))]))
 
 
-; check-contract :: List[Args] x List[Expr] x List[FunDef] x Env -> boolean
-; checks if all the contracts of the list of arguments are satisfied. If all of the
-; contracts are satisfied (or there is no contract to satisfy at all) we return true.
-; By the other hand, if at least one contract is violated the function returns false.
-(define (check-contract args expr fundefs env)
-  (match args
-    ['() #t]
-    [(cons arg rest)
-     (if (arg-cont? arg)
-         (let ([c (arg-cont-contract arg)])
-           (if (interp (app (list c (first expr))) fundef env)
-               (check-contract rest (cdr expr) fundefs env)
-               (error "Runtime contract error: <~a> does not satisfy <~a>"
-                      (first expr) c)))
-         (check-contract rest (cdr expr) fundefs env))]))
-
-
 ; num-bool-op? :: <Binop> -> boolean
 ; operators that receive numbers but return a boolean
 (define num-bool-ops (list < > =))
@@ -436,6 +418,34 @@ representation BNF:
          #f)]))
 
 
+; is-contract :: FunDef -> boolean
+; checks if the function given is a contract or not.
+(define (is-contract fun)
+  (match fun
+    [(fundef fname args type body) (if (and (eq? Bool type)
+                                            (arg-any? (first args))
+                                            (eq? '() (rest args)))
+                                       #t
+                                       #f)]))
+
+
+; check-contract :: List[Args] x List[Expr] x List[FunDef] x Env -> boolean
+; checks if all the contracts of the list of arguments are satisfied. If all of the
+; contracts are satisfied (or there is no contract to satisfy at all) we return true.
+; By the other hand, if at least one contract is violated the function returns false.
+(define (check-contract args expr fundefs env)
+  (match args
+    ['() #t]
+    [(cons arg rest)
+     (if (arg-cont? arg)
+         (let ([c (arg-cont-contract arg)])
+           (if (interp (app (list c (first expr))) fundef env)
+               (check-contract rest (cdr expr) fundefs env)
+               (error "Runtime contract error: <~a> does not satisfy <~a>"
+                      (first expr) c)))
+         (check-contract rest (cdr expr) fundefs env))]))
+
+
 ; typeof-app :: List[Expr] x  List[Expr] x List[FunDef] x Env -> boolean
 ; Checks if the type of every element of the argument list matches with the type
 ; of the expression.
@@ -454,14 +464,24 @@ representation BNF:
                        (error "Static type error: expected Num found Bool")
                        (error "Static type error: expected Bool found Num"))))
              (if (arg-cont? (first args))
-                 (let ([tl (typeof (first expr) fundefs env)])
-                   (if (or (equal? Any tl)
-                           (equal? tl (arg-cont-type (first args)))
-                           (equal? Any (arg-cont-type (first args))))
-                       (typeof-app (rest args) (rest expr) fundefs env)
-                       (if (equal? Num (arg-cont-type (first args)))
-                           (error "Static type error: expected Num found Bool")
-                           (error "Static type error: expected Bool found Num"))))
+                 (if (is-contract (lookup-fundef (arg-cont-contract (first args))
+                                                 fundefs))
+                     (if (contract-check (fundef-args
+                                          (lookup-fundef
+                                           (arg-cont-contract
+                                            (first args))
+                                           fundefs))
+                                         expr fundefs env)
+                         (let ([tl (typeof (first expr) fundefs env)])
+                           (if (or (equal? Any tl)
+                                   (equal? tl (arg-cont-type (first args)))
+                                   (equal? Any (arg-cont-type (first args))))
+                               (typeof-app (rest args) (rest expr) fundefs env)
+                               (if (equal? Num (arg-cont-type (first args)))
+                                   (error "Static type error: expected Num found Bool")
+                                   (error "Static type error: expected Bool found Num"))))
+                         (error "Static contract error: invalid type for <contract>"))
+                     (error "Static contract error: invalid type for <contract>"))
                  (typeof-app (rest args) (rest expr) fundefs env)))])
       (error "Static type error: given wrong amount of arguments")))
 
@@ -497,23 +517,57 @@ representation BNF:
                                                       (arg-type-type arg)
                                                       empty
                                                       env))
-                         (extend-env-args rest
-                                          (extend-env (arg-any-id arg)
-                                                      Any
-                                                      empty
-                                                      env)))]))
+                         (if (arg-cont? arg)
+                             (extend-env-args rest
+                                              (extend-env (arg-cont-id arg)
+                                                          (arg-cont-type arg)
+                                                          empty
+                                                          env))
+                             (extend-env-args rest
+                                              (extend-env (arg-any-id arg)
+                                                          Any
+                                                          empty
+                                                          env))))]))
 
 
 ; typeof-fundef :: FunDef x [List[FunDef]] x [Env] -> boolean?
 ; Checks if the types of the functions defined match with it's bodies.
 (define (typeof-fundef fun [fundefs '()] [env mtEnv])
-   (let ([tb (typeof (fundef-expr fun) fundefs (extend-env-args (fundef-args fun)))])
-     (if (or (and (eq? (fundef-type fun) Num)
-                  (eq? tb Bool))
-             (and (eq? (fundef-type fun) Bool)
-                  (eq? tb Num)))
-         (error "Static type error: function type declared mismatch body type")
-         #t)))
+  (let ([tb (typeof (fundef-expr fun)
+                        fundefs (extend-env-args
+                                 (fundef-args fun)))])
+        (if (or (and (eq? (fundef-type fun) Num)
+                     (eq? tb Bool))
+                (and (eq? (fundef-type fun) Bool)
+                     (eq? tb Num)))
+            (error "Static type error: function type declared mismatch body type")
+            #t)))
+
+
+; has-one-arg? :: List[Arg] -> boolean
+; This function receives a list of args and returns a boolean depending if the
+; List contains one and only one argument with a type "Any".
+(define (has-one-arg? args)
+  (if (and (equal? (arg-cont-type (car args)) Any)
+           (equal? (cdr args) '()))
+      #t
+      #f))
+
+
+; contract-check :: List[Arg] x List[FunDef] -> boolean
+; Checks if every contract is well typed.
+(define (contract-check args fundefs)
+  (match args
+    [(? empty?) #t]
+    [(? list?) (if (arg-cont? (car args))
+                   (contract-check (cdr args) fundefs)
+                   (let ([f (lookup-fundef (arg-cont-contract (car args))
+                                           fundefs)])
+                     (if (and (equal? (fundef-type f) Bool)
+                              (has-one-arg? (fundef-args f)))
+                         (contract-check (cdr args) fundefs)
+                         (error "Static contract error: invalid type for <~a>"
+                                (arg-cont-contract (car args))))))]))
 
 
 ; run :: src -> Val?
@@ -554,7 +608,7 @@ representation BNF:
   (typeof expr fundefs mtEnv))
 
 
-; run-typecheck :: src -> Val?;
+; run-typecheck :: src -> Val?
 ; Runs a program received from the console in src form using a typecheker.
 ; To do so, we first have to generate the Program in a Prog structure, then use
 ; the typecheck function to check if there is any static error, and finally it
@@ -563,3 +617,7 @@ representation BNF:
   (def (program fundefs expr)(prog-parse (map parse src)))
   (let ([type (typecheck src)])
     (interp expr fundefs mtEnv)))
+
+(run-typecheck '{{define {gt10 x} : Num {+ x 10}} ; tipo declarado Num en vez de Bool
+         {define {positive {x @ gt10}} : Num {- x 10}}
+         {positive 15}})
