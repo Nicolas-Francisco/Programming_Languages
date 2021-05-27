@@ -203,9 +203,9 @@
 
 ;; run :: s-expr -> number/boolean/procedura/struct
 (define(run prog [flag ""])
-  (match flag
-    ["" (interp (parse prog) empty-env)]
-    ["ppwu" (pretty-printing (interp (parse prog) empty-env))]))
+  (if (eq? flag "ppwu")
+      (pretty-printing (interp (parse prog) empty-env))
+      (interp (parse prog) empty-env)))
 
 
 #|-----------------------------
