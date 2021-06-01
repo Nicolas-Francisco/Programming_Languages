@@ -270,12 +270,19 @@ update-env! :: Sym Val Env -> Void
 ; "{Succ {Zero}}"
 (define (pretty-printing sV)
   (match sV
+    ; Casos base:
+    ; lista vacía
     ['() ""]
+    ; valores dentro de la estructura (num, sym, bool, str)
+    [(? number?)(string-append (number->string sV) " ")]
+    [(? symbol?)(string-append (symbol->string sV " "))]
+    [(? boolean?)(string-append ((λ (b) (if b "#t " "#f ")) sV))]
+    [(? string?)(string-append sV " ")]
+    ; Estructura con valor vacío
+    [(structV _ name '())
+     (string-append "{" (symbol->string name) "}")]
+    ; Recursión :
+    ; estructura con lista de valores
     [(structV _ name values)
-     (let [(name (structV-variant sV))
-           (vals (structV-values sV))]
-     (if (eq? '() vals)
-         (string-append "{" (symbol->string name)
-                        (pretty-printing vals) "}")
-         (string-append "{" (symbol->string name) " "
-                        (pretty-printing (first vals)) "}")))]))
+     (string-append "{" (symbol->string name) " "
+                    (foldr string-append "" (map pretty-printing values)) "}")]))

@@ -144,3 +144,10 @@
                                  {case {Succ m} => m}}}}}
           {pred {Succ {Succ {Succ {Zero}}}}}} "ppwu")
       "{Succ {Succ {Zero}}}")
+
+; test 5 - estructura con valores
+(test (run '{local {{datatype List 
+                  {Empty} 
+                  {Cons a b}}}
+          {Cons 1 {Cons #t {Cons "hello" {Empty}}}}} "ppwu")
+      "{Cons 1 {Cons #t {Cons hello {Empty}}}}")
