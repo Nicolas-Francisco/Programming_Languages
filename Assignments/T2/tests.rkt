@@ -104,8 +104,7 @@
                {local {,stream-take ,merge-sort ,fibs ,stream-zipWith}
                  {stream-take 10 {merge-sort fibs fibs}}}} "pp")   "{list 1 1 1 1 2 2 3 3 5 5}"))
 
-;--------------------------------- Tests T2 --------------------------------------;
-; tests for the 'warm-up'
+;--------------------------------- Tests Warm-up ---------------------------------;
 ; test de enunciado 1
 (test (pretty-printing
        (run '{local {{datatype Nat 
@@ -145,9 +144,54 @@
           {pred {Succ {Succ {Succ {Zero}}}}}} "ppwu")
       "{Succ {Succ {Zero}}}")
 
-; test 5 - estructura con valores
-(test (run '{local {{datatype List 
-                  {Empty} 
-                  {Cons a b}}}
-          {Cons 1 {Cons #t {Cons "hello" {Empty}}}}} "ppwu")
-      "{Cons 1 {Cons #t {Cons hello {Empty}}}}")
+; test 5 - estructura con más de un elemento
+(test (run '{local {{datatype Arbol 
+                  {Leaf} 
+                  {Node a b}}}
+          {Node {Leaf} {Node {Leaf} {Leaf}}}} "ppwu")
+      "{Node {Leaf}{Node {Leaf}{Leaf}}}")
+
+; test 6 - estructura con valores numéricos
+(test (run '{local {{datatype Arbol 
+                  {Leaf v} 
+                  {Node a b}}}
+          {Node {Leaf 1} {Node {Leaf #t} {Leaf "hello"}}}} "ppwu")
+      "{Node {Leaf  1}{Node {Leaf  #t}{Leaf  hello}}}")
+
+;--------------------------------- Tests listas ---------------------------------;
+; test de enunciado 1
+(test (run '{Empty? {Empty}})
+      #t)
+
+; test de enunciado 2
+(test (run '{List? {Cons 1 2}})
+      #t)
+
+; test de enunciado 3
+(test (run '{length {Cons 1 {Cons 2 {Cons 3 {Empty}}}}})
+      3)
+
+; test de enunciado 4 - azucar sintáctico 1
+(test (run '{match {list {+ 1 1} 4 6}
+          {case {Cons h r} => h}
+          {case _ => 0}})
+      2)
+
+; test de enunciado 5 - azucar sintáctico 2
+(test (run '{match {list}
+          {case {Cons h r} => h}
+          {case _ => 0}})
+      0)
+
+; test de enunciado 6 - extend del patter matching
+(test (run '{match {list 2 {list 4 5} 6}
+          {case {list a {list b c} d} => c}})
+      5)
+
+; test de enunciado 7 - flag pp 1
+(test (run '{list 1 4 6} "pp")
+      "{list 1 4 6}")
+
+; test de enunciado 8 - flag pp 2
+(test (run '{list} "pp")
+      "{list}")

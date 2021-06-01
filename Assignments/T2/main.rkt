@@ -72,6 +72,7 @@
     [(? boolean?) (bool s-expr)]
     [(? string?) (str s-expr)]
     [(? symbol?) (id s-expr)]
+    [(list 'list s-exprs ...) (parse-list s-exprs)] ; Syntactic sugar
     [(list 'if c t f) (ifc (parse c) (parse t) (parse f))]
     [(list 'fun xs b) (fun xs (parse b))]
     [(list 'with (list (list x e) ...) b)
@@ -84,6 +85,13 @@
      (if (assq f *primitives*)
          (prim-app f (map parse args)) ; args is a list
          (app (parse f) (map parse args)))]))
+
+; parse-list :: s-expr -> List
+(define (parse-list l)
+  (match l
+    [(list first rest ...)
+     (app (id 'Cons) (list (parse first) (parse-list rest)))]
+    [(list) (app (id 'Empty) (list))]))
 
 ; parse-def :: s-expr -> Def
 (define(parse-def s-expr)
@@ -108,7 +116,17 @@
     [(? number?)  (litP (num p))]
     [(? boolean?) (litP (bool p))]
     [(? string?)  (litP (str p))]
+    [(list 'list elements ...) (parse-pattern-list elements)]
     [(list ctr patterns ...) (constrP (first p) (map parse-pattern patterns))]))
+
+; parse-pattern-list : sexpr -> Pattern
+; This function extends the parse-pattern in order to allow the list
+; structure as a pattern.
+(define (parse-pattern-list l)
+  (match l
+    [(list first rest ...)
+     (constrP 'Cons (list (parse-pattern first) (parse-pattern-list rest)))]
+    [(list) (constrP 'Empty (list))]))
 
 ;; interp :: Expr Env -> number/boolean/procedure/Struct
 (define(interp expr env)
@@ -201,12 +219,32 @@
                      (list #f))]
                 [(x y) (error "Match failure")]))
 
-;; run :: s-expr -> number/boolean/procedura/struct
-(define(run prog [flag ""])
-  (match flag
-    ["" (interp (parse prog) empty-env)]
-    ["ppwu" (pretty-printing (interp (parse prog) empty-env))]))
+; list data structure definition
+(def list-struct '{datatype List
+                            {Empty}
+                            {Cons a b}})
 
+; length :: List -> num
+; function that receives a list and returns the length of it, but written
+; in MiniScheme+ syntax.
+(def length-function
+  '{define length
+     {fun {l}
+          {match l
+            {case {Cons a b} => {+ 1 {length b}}}
+            {case {Empty} => 0}}}})
+
+
+;; run :: s-expr -> number/boolean/procedura/struct
+(define (run prog [flag ""])
+  (begin
+    (def given
+      (interp (parse (list 'local (list list-struct length-function) prog))
+                           empty-env))
+    (match flag
+      ["" given]
+      ["pp" (pretty-printing given)]
+      ["ppwu" (pretty-printing given)])))
 
 #|-----------------------------
 Environment abstract data type
@@ -264,25 +302,32 @@ update-env! :: Sym Val Env -> Void
 ; pretty-printing :: <structV> -> <string>
 ; this function receives a data structure and returns the same structure
 ; but with a better visual representation.
-;
-; ex:
-; > (pretty-printing (structV 'Nat 'Succ (list (structV 'Nat 'Zero empty))))
-; "{Succ {Zero}}"
 (define (pretty-printing sV)
   (match sV
-    ; Casos base:
+    ; Base cases:
     ; lista vacía
     ['() ""]
-    ; valores dentro de la estructura (num, sym, bool, str)
-    [(? number?)(string-append (number->string sV) " ")]
-    [(? symbol?)(string-append (symbol->string sV " "))]
-    [(? boolean?)(string-append ((λ (b) (if b "#t " "#f ")) sV))]
-    [(? string?)(string-append sV " ")]
-    ; Estructura con valor vacío
+    ; values within the structure (num, sym, bool, str)
+    [(? number?)(string-append " " (number->string sV))]
+    [(? symbol?)(string-append " " (symbol->string sV))]
+    [(? boolean?)(string-append ((λ (b) (if b " #t" " #f")) sV))]
+    [(? string?)(string-append " " sV)]
+    ; list structure
+    [(structV 'List _ values) (string-append "{list" (pretty-print-list values))]
+    ; structure with empty value
     [(structV _ name '())
      (string-append "{" (symbol->string name) "}")]
-    ; Recursión :
+    ; Recursion :
     ; estructura con lista de valores
     [(structV _ name values)
      (string-append "{" (symbol->string name) " "
                     (foldr string-append "" (map pretty-printing values)) "}")]))
+
+; pretty-printing-list :: <structV> -> <string>
+; this function receives a list data structure and returns the same structure
+; but with a better visual representation.
+(define (pretty-print-list l)
+  (match l
+    [(list value (structV 'List _ values))
+     (string-append (pretty-printing value) (pretty-print-list values))]
+    [(list) "}"]))
