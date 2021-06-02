@@ -156,7 +156,14 @@
                   {Leaf v} 
                   {Node a b}}}
           {Node {Leaf 1} {Node {Leaf #t} {Leaf "hello"}}}} "ppwu")
-      "{Node {Leaf  1}{Node {Leaf  #t}{Leaf  hello}}}")
+      "{Node {Leaf 1}{Node {Leaf #t}{Leaf hello}}}")
+
+; test 7 - estructura list con flag "ppwu"
+(test (run '{local {{datatype List 
+                  {Empty} 
+                  {Cons a b}}}
+          {Cons 1 {Cons #t {Cons "hello" {Empty}}}}} "ppwu")
+      "{Cons 1{Cons #t{Cons hello{Empty}}}}")
 
 ;--------------------------------- Tests listas ---------------------------------;
 ; test de enunciado 1

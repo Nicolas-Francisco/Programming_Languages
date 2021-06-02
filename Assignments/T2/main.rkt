@@ -243,7 +243,7 @@
                            empty-env))
     (match flag
       ["" given]
-      ["pp" (pretty-printing given)]
+      ["pp" (pretty-printing-list given)]
       ["ppwu" (pretty-printing given)])))
 
 #|-----------------------------
@@ -298,22 +298,20 @@ update-env! :: Sym Val Env -> Void
     (and     ,(lambda args (apply (lambda (x y) (and x y)) args)))
     (or      ,(lambda args (apply (lambda (x y) (or x y)) args)))))
 
+; to-str : number/boolean/id/string -> string
+; returns an object as a string
+(define (to-str obj)
+  (match obj
+    [(? number?)(string-append (number->string obj))]
+    [(? symbol?)(string-append (symbol->string obj))]
+    [(? boolean?)(string-append ((λ (b) (if b "#t" "#f")) obj))]
+    [(? string?)(string-append obj)]))
 
-; pretty-printing :: <structV> -> <string>
+; pretty-printing :: number/boolean/procedure/Struct -> string
 ; this function receives a data structure and returns the same structure
 ; but with a better visual representation.
 (define (pretty-printing sV)
   (match sV
-    ; Base cases:
-    ; lista vacía
-    ['() ""]
-    ; values within the structure (num, sym, bool, str)
-    [(? number?)(string-append " " (number->string sV))]
-    [(? symbol?)(string-append " " (symbol->string sV))]
-    [(? boolean?)(string-append ((λ (b) (if b " #t" " #f")) sV))]
-    [(? string?)(string-append " " sV)]
-    ; list structure
-    [(structV 'List _ values) (string-append "{list" (pretty-print-list values))]
     ; structure with empty value
     [(structV _ name '())
      (string-append "{" (symbol->string name) "}")]
@@ -321,13 +319,36 @@ update-env! :: Sym Val Env -> Void
     ; estructura con lista de valores
     [(structV _ name values)
      (string-append "{" (symbol->string name) " "
-                    (foldr string-append "" (map pretty-printing values)) "}")]))
+                    (foldr string-append "" (map pretty-printing values)) "}")]
+    ; values within the structure (num, sym, bool, str)
+    [id (string-append (to-str id))]
+    ; empty list
+    ['() ""]))
 
-; pretty-printing-list :: <structV> -> <string>
-; this function receives a list data structure and returns the same structure
-; but with a better visual representation.
-(define (pretty-print-list l)
+; pretty-printing-list :: number/boolean/procedure/Struct -> string
+; this function extends the pretty-printing function in the list structure case.
+(define (pretty-printing-list sV)
+  (match sV
+    ; list structure (extension)
+    [(structV 'List _ values)
+     (string-append "{list" (pretty-printing-list-vals values))]
+    ; structure with empty value
+    [(structV _ name '())
+     (string-append "{" (symbol->string name) "}")]
+    ; Recursion :
+    ; estructura con lista de valores
+    [(structV _ name values)
+     (string-append "{" (symbol->string name) " "
+                    (foldr string-append "" (map pretty-printing values)) "}")]
+    ; values within the structure (num, sym, bool, str)
+    [id (to-str id)]
+    ; empty list
+    ['() ""]))
+
+; pretty-printing-list-vals : number/boolean/procedure/Struct -> string
+; This function covers the list 
+(define (pretty-printing-list-vals l)
   (match l
     [(list value (structV 'List _ values))
-     (string-append (pretty-printing value) (pretty-print-list values))]
+     (string-append " "(pretty-printing-list value) (pretty-printing-list-vals values))]
     [(list) "}"]))
