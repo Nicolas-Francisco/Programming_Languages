@@ -202,3 +202,12 @@
 ; test de enunciado 8 - flag pp 2
 (test (run '{list} "pp")
       "{list}")
+
+;--------------------------------- Tests lazyness ---------------------------------;
+; test de enunciado 1
+(test (run '{{fun {x  {lazy y}} x} 1 {/ 1 0}})
+      1)
+
+; test de enunciado 2
+(test/exn (run '{{fun {x  y} x} 1 {/ 1 0}})
+          "/: division by zero")

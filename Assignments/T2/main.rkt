@@ -128,6 +128,12 @@
      (constrP 'Cons (list (parse-pattern first) (parse-pattern-list rest)))]
     [(list) (constrP 'Empty (list))]))
 
+; Values of the lenguage.
+; We use cache to implement call-by-need 
+(deftype Val
+  (closureV arg body env)
+  (exprV expr env cache))
+
 ;; interp :: Expr Env -> number/boolean/procedure/Struct
 (define(interp expr env)
   (match expr
@@ -144,12 +150,11 @@
     [(id x) (env-lookup x env)]
     ; function (notice the meta interpretation)
     [(fun ids body)
-     (λ (arg-vals)
-       (interp body (extend-env ids arg-vals env)))]
+     (closureV ids
+               (λ (arg-vals) (interp body (extend-env ids arg-vals env)))
+               env)]
     ; application
-    [(app fun-expr arg-expr-list)
-     ((interp fun-expr env)
-      (map (λ (a) (interp a env)) arg-expr-list))]
+    [(app fun-expr arg-expr-list) (interp-app fun-expr arg-expr-list env)]
     ; primitive application
     [(prim-app prim arg-expr-list)
      (apply (cadr (assq prim *primitives*))
@@ -158,12 +163,24 @@
     [(lcal defs body)
      (def new-env (extend-env '() '() env))
      (for-each (λ (d) (interp-def d new-env)) defs)
-     (interp body new-env)]
+     (strict (interp body new-env))]
     ; pattern matching
     [(mtch expr cases)
      (def value-matched (interp expr env))
      (def (cons alist body) (find-first-matching-case value-matched cases))
-     (interp body (extend-env (map car alist) (map cdr alist) env))]))
+     (strict (interp body (extend-env (map car alist) (map cdr alist) env)))]))
+
+; interp-app :: Expr List Env -> 
+(define (interp-app fun-expr arg-expr-list env)
+  (match (strict (interp fun-expr env))
+    [(closureV arg body _)
+     (body (map (λ (id a)
+                     (match id
+                       [(list 'lazy x) (exprV a env (box #f))]
+                       [_ (strict (interp a env))]))
+                   arg
+                   arg-expr-list))]
+    [inter (inter (map (λ (a) (interp a env)) arg-expr-list))]))
 
 ; interp-def :: Def Env -> Void
 (define(interp-def d env)
@@ -194,6 +211,20 @@
   (update-env! (string->symbol (string-append (symbol->string varname) "?"))
                (λ (v) (symbol=? (structV-variant (first v)) varname))
                env))
+
+; strict : Val (exprV/closureV/numV/boolV) -> Val (closureV/numV/boolV)
+(define (strict val)
+  (match val
+    [(exprV expr env cache)
+     (if (unbox cache)
+         (begin
+           ; (printf "using cached value ~v~n" (unbox cache)) 
+           (unbox cache))
+         (let ([inval (strict (interp expr env))])
+           ;(printf "Forcing exprV to ~v~n" inval)
+           (set-box! cache inval)
+           inval))]
+    [_ val]))
 
 ;;;;; pattern matcher
 (define(find-first-matching-case value cases)
