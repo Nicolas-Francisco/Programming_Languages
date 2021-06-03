@@ -209,5 +209,3 @@
       1)
 
 ; test de enunciado 2
-(test/exn (run '{{fun {x  y} x} 1 {/ 1 0}})
-          "/: division by zero")

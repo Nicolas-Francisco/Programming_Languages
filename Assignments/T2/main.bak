@@ -72,6 +72,7 @@
     [(? boolean?) (bool s-expr)]
     [(? string?) (str s-expr)]
     [(? symbol?) (id s-expr)]
+    [(list 'list s-exprs ...) (parse-list s-exprs)] ; Syntactic sugar
     [(list 'if c t f) (ifc (parse c) (parse t) (parse f))]
     [(list 'fun xs b) (fun xs (parse b))]
     [(list 'with (list (list x e) ...) b)
@@ -84,6 +85,13 @@
      (if (assq f *primitives*)
          (prim-app f (map parse args)) ; args is a list
          (app (parse f) (map parse args)))]))
+
+; parse-list :: s-expr -> List
+(define (parse-list l)
+  (match l
+    [(list first rest ...)
+     (app (id 'Cons) (list (parse first) (parse-list rest)))]
+    [(list) (app (id 'Empty) (list))]))
 
 ; parse-def :: s-expr -> Def
 (define(parse-def s-expr)
@@ -108,7 +116,23 @@
     [(? number?)  (litP (num p))]
     [(? boolean?) (litP (bool p))]
     [(? string?)  (litP (str p))]
+    [(list 'list elements ...) (parse-pattern-list elements)]
     [(list ctr patterns ...) (constrP (first p) (map parse-pattern patterns))]))
+
+; parse-pattern-list : sexpr -> Pattern
+; This function extends the parse-pattern in order to allow the list
+; structure as a pattern.
+(define (parse-pattern-list l)
+  (match l
+    [(list first rest ...)
+     (constrP 'Cons (list (parse-pattern first) (parse-pattern-list rest)))]
+    [(list) (constrP 'Empty (list))]))
+
+; Values of the lenguage.
+; We use cache to implement call-by-need 
+(deftype Val
+  (closureV arg body env)
+  (exprV expr env cache))
 
 ;; interp :: Expr Env -> number/boolean/procedure/Struct
 (define(interp expr env)
@@ -126,12 +150,11 @@
     [(id x) (env-lookup x env)]
     ; function (notice the meta interpretation)
     [(fun ids body)
-     (λ (arg-vals)
-       (interp body (extend-env ids arg-vals env)))]
+     (closureV ids
+               (λ (arg-vals) (interp body (extend-env ids arg-vals env)))
+               env)]
     ; application
-    [(app fun-expr arg-expr-list)
-     ((interp fun-expr env)
-      (map (λ (a) (interp a env)) arg-expr-list))]
+    [(app fun-expr arg-expr-list) (interp-app fun-expr arg-expr-list env)]
     ; primitive application
     [(prim-app prim arg-expr-list)
      (apply (cadr (assq prim *primitives*))
@@ -140,12 +163,24 @@
     [(lcal defs body)
      (def new-env (extend-env '() '() env))
      (for-each (λ (d) (interp-def d new-env)) defs)
-     (interp body new-env)]
+     (strict (interp body new-env))]
     ; pattern matching
     [(mtch expr cases)
      (def value-matched (interp expr env))
      (def (cons alist body) (find-first-matching-case value-matched cases))
-     (interp body (extend-env (map car alist) (map cdr alist) env))]))
+     (strict (interp body (extend-env (map car alist) (map cdr alist) env)))]))
+
+; interp-app :: Expr List Env -> 
+(define (interp-app fun-expr arg-expr-list env)
+  (match (strict (interp fun-expr env))
+    [(closureV arg body _)
+     (body (map (λ (id a)
+                     (match id
+                       [(list 'lazy x) (exprV a env (box #f))]
+                       [_ (strict (interp a env))]))
+                   arg
+                   arg-expr-list))]
+    [inter (inter (map (λ (a) (interp a env)) arg-expr-list))]))
 
 ; interp-def :: Def Env -> Void
 (define(interp-def d env)
@@ -177,6 +212,20 @@
                (λ (v) (symbol=? (structV-variant (first v)) varname))
                env))
 
+; strict : Val (exprV/closureV/numV/boolV) -> Val (closureV/numV/boolV)
+(define (strict val)
+  (match val
+    [(exprV expr env cache)
+     (if (unbox cache)
+         (begin
+           ; (printf "using cached value ~v~n" (unbox cache)) 
+           (unbox cache))
+         (let ([inval (strict (interp expr env))])
+           ;(printf "Forcing exprV to ~v~n" inval)
+           (set-box! cache inval)
+           inval))]
+    [_ val]))
+
 ;;;;; pattern matcher
 (define(find-first-matching-case value cases)
   (match cases
@@ -201,12 +250,32 @@
                      (list #f))]
                 [(x y) (error "Match failure")]))
 
-;; run :: s-expr -> number/boolean/procedura/struct
-(define(run prog [flag ""])
-  (if (eq? flag "ppwu")
-      (pretty-printing (interp (parse prog) empty-env))
-      (interp (parse prog) empty-env)))
+; list data structure definition
+(def list-struct '{datatype List
+                            {Empty}
+                            {Cons a b}})
 
+; length :: List -> num
+; function that receives a list and returns the length of it, but written
+; in MiniScheme+ syntax.
+(def length-function
+  '{define length
+     {fun {l}
+          {match l
+            {case {Cons a b} => {+ 1 {length b}}}
+            {case {Empty} => 0}}}})
+
+
+;; run :: s-expr -> number/boolean/procedura/struct
+(define (run prog [flag ""])
+  (begin
+    (def given
+      (interp (parse (list 'local (list list-struct length-function) prog))
+                           empty-env))
+    (match flag
+      ["" given]
+      ["pp" (pretty-printing-list given)]
+      ["ppwu" (pretty-printing given)])))
 
 #|-----------------------------
 Environment abstract data type
@@ -260,22 +329,57 @@ update-env! :: Sym Val Env -> Void
     (and     ,(lambda args (apply (lambda (x y) (and x y)) args)))
     (or      ,(lambda args (apply (lambda (x y) (or x y)) args)))))
 
+; to-str : number/boolean/id/string -> string
+; returns an object as a string
+(define (to-str obj)
+  (match obj
+    [(? number?)(string-append (number->string obj))]
+    [(? symbol?)(string-append (symbol->string obj))]
+    [(? boolean?)(string-append ((λ (b) (if b "#t" "#f")) obj))]
+    [(? string?)(string-append obj)]))
 
-; pretty-printing :: <structV> -> <string>
+; pretty-printing :: number/boolean/procedure/Struct -> string
 ; this function receives a data structure and returns the same structure
 ; but with a better visual representation.
-;
-; ex:
-; > (pretty-printing (structV 'Nat 'Succ (list (structV 'Nat 'Zero empty))))
-; "{Succ {Zero}}"
 (define (pretty-printing sV)
   (match sV
-    ['() ""]
+    ; structure with empty value
+    [(structV _ name '())
+     (string-append "{" (symbol->string name) "}")]
+    ; Recursion :
+    ; estructura con lista de valores
     [(structV _ name values)
-     (let [(name (structV-variant sV))
-           (vals (structV-values sV))]
-     (if (eq? '() vals)
-         (string-append "{" (symbol->string name)
-                        (pretty-printing vals) "}")
-         (string-append "{" (symbol->string name) " "
-                        (pretty-printing (first vals)) "}")))]))
+     (string-append "{" (symbol->string name) " "
+                    (foldr string-append "" (map pretty-printing values)) "}")]
+    ; values within the structure (num, sym, bool, str)
+    [id (string-append (to-str id))]
+    ; empty list
+    ['() ""]))
+
+; pretty-printing-list :: number/boolean/procedure/Struct -> string
+; this function extends the pretty-printing function in the list structure case.
+(define (pretty-printing-list sV)
+  (match sV
+    ; list structure (extension)
+    [(structV 'List _ values)
+     (string-append "{list" (pretty-printing-list-vals values))]
+    ; structure with empty value
+    [(structV _ name '())
+     (string-append "{" (symbol->string name) "}")]
+    ; Recursion :
+    ; estructura con lista de valores
+    [(structV _ name values)
+     (string-append "{" (symbol->string name) " "
+                    (foldr string-append "" (map pretty-printing values)) "}")]
+    ; values within the structure (num, sym, bool, str)
+    [id (to-str id)]
+    ; empty list
+    ['() ""]))
+
+; pretty-printing-list-vals : number/boolean/procedure/Struct -> string
+; This function covers the list 
+(define (pretty-printing-list-vals l)
+  (match l
+    [(list value (structV 'List _ values))
+     (string-append " "(pretty-printing-list value) (pretty-printing-list-vals values))]
+    [(list) "}"]))

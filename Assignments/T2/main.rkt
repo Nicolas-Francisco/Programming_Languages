@@ -143,15 +143,15 @@
     [(str s) s]
     ; conditional
     [(ifc c t f)
-     (if (interp c env)
-         (interp t env)
-         (interp f env))]
+     (if (strict (interp c env))
+         (strict (interp t env))
+         (strict (interp f env)))]
     ; identifier
     [(id x) (env-lookup x env)]
     ; function (notice the meta interpretation)
     [(fun ids body)
      (closureV ids
-               (λ (arg-vals) (interp body (extend-env ids arg-vals env)))
+               (λ (arg-vals) (strict (interp body (extend-env ids arg-vals env))))
                env)]
     ; application
     [(app fun-expr arg-expr-list) (interp-app fun-expr arg-expr-list env)]
@@ -170,6 +170,20 @@
      (def (cons alist body) (find-first-matching-case value-matched cases))
      (strict (interp body (extend-env (map car alist) (map cdr alist) env)))]))
 
+; strict : Val (exprV/closureV/numV/boolV) -> Val (closureV/numV/boolV)
+(define (strict val)
+  (match val
+    [(exprV expr env cache)
+     (if (unbox cache)
+         (begin
+           ; (printf "using cached value ~v~n" (unbox cache)) 
+           (unbox cache))
+         (let ([inval (strict (interp expr env))])
+           ;(printf "Forcing exprV to ~v~n" inval)
+           (set-box! cache inval)
+           inval))]
+    [_ val]))
+
 ; interp-app :: Expr List Env -> 
 (define (interp-app fun-expr arg-expr-list env)
   (match (strict (interp fun-expr env))
@@ -180,7 +194,7 @@
                        [_ (strict (interp a env))]))
                    arg
                    arg-expr-list))]
-    [inter (inter (map (λ (a) (interp a env)) arg-expr-list))]))
+    [exp (exp (map (λ (a) (interp a env)) arg-expr-list))]))
 
 ; interp-def :: Def Env -> Void
 (define(interp-def d env)
@@ -205,26 +219,14 @@
   (def varname (variant-name var))
   ;; variant data constructor, eg. Zero, Succ
   (update-env! varname
-               (λ (args) (structV name varname args))
+               (closureV (variant-params var)
+                         (λ (args) (structV name varname args))
+                         env)
                env)
   ;; variant predicate, eg. Zero?, Succ?
   (update-env! (string->symbol (string-append (symbol->string varname) "?"))
                (λ (v) (symbol=? (structV-variant (first v)) varname))
                env))
-
-; strict : Val (exprV/closureV/numV/boolV) -> Val (closureV/numV/boolV)
-(define (strict val)
-  (match val
-    [(exprV expr env cache)
-     (if (unbox cache)
-         (begin
-           ; (printf "using cached value ~v~n" (unbox cache)) 
-           (unbox cache))
-         (let ([inval (strict (interp expr env))])
-           ;(printf "Forcing exprV to ~v~n" inval)
-           (set-box! cache inval)
-           inval))]
-    [_ val]))
 
 ;;;;; pattern matcher
 (define(find-first-matching-case value cases)
