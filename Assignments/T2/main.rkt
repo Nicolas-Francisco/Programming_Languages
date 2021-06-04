@@ -10,24 +10,19 @@
          | {<expr> <expr>*}
          | {local {<def>*} <expr>}
          | {match <expr> <case>+}
-
 <case> ::= {'case <pattern> '=> <expr>}
 <pattern> ::= <num>
          | <bool>
          | <string>
          | <id>
          | (<constr-id> <attr-id>*)
-
 <def>  ::= {define <id> <expr>}
          | {datatype <typename> <type-constructor>*}}
-
-
 <type-constructor> ::= {<id> <member>*}
 <constr-id> :: = <id>
 <attr-id> :: = <id>
 <typename> :: = <id>
 <member>   :: = <id>
-
 |#
 ; expresiones
 (deftype Expr
@@ -135,6 +130,10 @@
   (exprV expr env cache))
 
 ;; interp :: Expr Env -> number/boolean/procedure/Struct
+; We are going to asume that the values of the lenguage do not strictly require
+; structures such as boolV or numV.
+; Even if we do not use a structure, we have to use strict to check the value
+; returned by the interpreter.
 (define(interp expr env)
   (match expr
     ; literals
@@ -148,13 +147,17 @@
          (strict (interp f env)))]
     ; identifier
     [(id x) (env-lookup x env)]
-    ; function (notice the meta interpretation)
+    ; function -> the body of the function is the λ itself
     [(fun ids body)
-     (closureV ids
-               (λ (arg-vals) (strict (interp body (extend-env ids arg-vals env))))
-               env)]
-    ; application
-    [(app fun-expr arg-expr-list) (interp-app fun-expr arg-expr-list env)]
+     (λ (arg-vals)
+       (interp body
+               (extend-env ids
+                           ; We have to check lazyness in the ids!
+                           (map (λ (x id) (interp-lazy x id env)) arg-vals ids)
+                           env)))]
+    ; application -> we just interp the fun-expr to get the λ function
+    [(app fun-expr arg-expr-list)
+     ((interp fun-expr env) arg-expr-list)]
     ; primitive application
     [(prim-app prim arg-expr-list)
      (apply (cadr (assq prim *primitives*))
@@ -184,17 +187,11 @@
            inval))]
     [_ val]))
 
-; interp-app :: Expr List Env -> 
-(define (interp-app fun-expr arg-expr-list env)
-  (match (strict (interp fun-expr env))
-    [(closureV arg body _)
-     (body (map (λ (id a)
-                     (match id
-                       [(list 'lazy x) (exprV a env (box #f))]
-                       [_ (strict (interp a env))]))
-                   arg
-                   arg-expr-list))]
-    [exp (exp (map (λ (a) (interp a env)) arg-expr-list))]))
+; interp-lazy :: 
+(define (interp-lazy fun-arg id env)
+  (match id
+    [(list 'lazy x) (exprV fun-arg env (box #f))]
+    [_ (strict (interp fun-arg env))]))
 
 ; interp-def :: Def Env -> Void
 (define(interp-def d env)
@@ -210,22 +207,27 @@
 (define(interp-datatype name env)
   ; datatype predicate, eg. Nat?
   (update-env! (string->symbol (string-append (symbol->string name) "?"))
-               (λ (v) (symbol=? (structV-name (first v)) name))
+               ; We now have to interp the id of the argument given
+               (λ (v) (symbol=? (structV-name (interp (first v) env)) name))
                env))
 
 ; interp-variant :: String String Env -> Void
 (define(interp-variant name var env)
-  ;; name of the variant or dataconstructor
+  ;; name and params of the variant or dataconstructor
   (def varname (variant-name var))
+  (def varparams (variant-params var))
   ;; variant data constructor, eg. Zero, Succ
   (update-env! varname
-               (closureV (variant-params var)
-                         (λ (args) (structV name varname args))
-                         env)
+               (λ (args)
+                 (structV name
+                          varname
+                          (map (λ (a lazy) (interp-lazy a lazy env)) ; lazy checker
+                               args
+                               varparams)))
                env)
   ;; variant predicate, eg. Zero?, Succ?
   (update-env! (string->symbol (string-append (symbol->string varname) "?"))
-               (λ (v) (symbol=? (structV-variant (first v)) varname))
+               (λ (v) (symbol=? (structV-variant (interp (first v) env)) varname))
                env))
 
 ;;;;; pattern matcher
@@ -271,6 +273,7 @@
 ;; run :: s-expr -> number/boolean/procedura/struct
 (define (run prog [flag ""])
   (begin
+    ; We define the result given by the interp, using the list-struct def.
     (def given
       (interp (parse (list 'local (list list-struct length-function) prog))
                            empty-env))
@@ -369,7 +372,7 @@ update-env! :: Sym Val Env -> Void
     [(structV _ name '())
      (string-append "{" (symbol->string name) "}")]
     ; Recursion :
-    ; estructura con lista de valores
+    ; strucutre with a list as values
     [(structV _ name values)
      (string-append "{" (symbol->string name) " "
                     (foldr string-append "" (map pretty-printing values)) "}")]
@@ -379,7 +382,7 @@ update-env! :: Sym Val Env -> Void
     ['() ""]))
 
 ; pretty-printing-list-vals : number/boolean/procedure/Struct -> string
-; This function covers the list 
+; This function covers the rest of the list 
 (define (pretty-printing-list-vals l)
   (match l
     [(list value (structV 'List _ values))

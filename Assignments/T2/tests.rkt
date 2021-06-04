@@ -209,3 +209,8 @@
       1)
 
 ; test de enunciado 2
+(test (run '{local {{datatype T 
+                  {C {lazy a}}}
+                {define x {C {/ 1 0}}}}
+          {T? x}})
+      #t)
