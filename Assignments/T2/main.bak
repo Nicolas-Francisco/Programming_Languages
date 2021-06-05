@@ -149,16 +149,15 @@
     [(id x) (env-lookup x env)]
     ; function -> the body of the function is the λ itself
     [(fun ids body)
-     (λ (arg-vals fenv)
+     (λ (arg-vals)
        (interp body
                (extend-env ids
                            ; We have to check lazyness in the ids!
-                           (map (λ (x id) (interp-lazy x id fenv))
-                                arg-vals ids)
+                           (map (λ (x id) (interp-lazy x id env)) arg-vals ids)
                            env)))]
     ; application -> we just interp the fun-expr to get the λ function
     [(app fun-expr arg-expr-list)
-     ((interp fun-expr env) arg-expr-list env)]
+     ((interp fun-expr env) arg-expr-list)]
     ; primitive application
     [(prim-app prim arg-expr-list)
      (apply (cadr (assq prim *primitives*))
@@ -186,7 +185,6 @@
            ;(printf "Forcing exprV to ~v~n" inval)
            (set-box! cache inval)
            inval))]
-    [(structV name variant val) (structV name variant (map strict val))]
     [_ val]))
 
 ; interp-lazy :: 
@@ -210,9 +208,7 @@
   ; datatype predicate, eg. Nat?
   (update-env! (string->symbol (string-append (symbol->string name) "?"))
                ; We now have to interp the id of the argument given
-               (λ (v . [fenv = mtEnv])
-                 (symbol=? (structV-name (interp (first v) env))
-                           name))
+               (λ (v) (symbol=? (structV-name (interp (first v) env)) name))
                env))
 
 ; interp-variant :: String String Env -> Void
@@ -222,18 +218,16 @@
   (def varparams (variant-params var))
   ;; variant data constructor, eg. Zero, Succ
   (update-env! varname
-               (λ (args fenv)
+               (λ (args)
                  (structV name
                           varname
-                          (map (λ (a lazy) (interp-lazy a lazy fenv)) ; lazy checker
+                          (map (λ (a lazy) (interp-lazy a lazy env)) ; lazy checker
                                args
                                varparams)))
                env)
   ;; variant predicate, eg. Zero?, Succ?
   (update-env! (string->symbol (string-append (symbol->string varname) "?"))
-               (λ (v . [fenv = mtEnv])
-                 (symbol=? (structV-variant (interp (first v) env))
-                           varname))
+               (λ (v) (symbol=? (structV-variant (interp (first v) env)) varname))
                env))
 
 ;;;;; pattern matcher
@@ -282,7 +276,7 @@
     ; We define the result given by the interp, using the list-struct def.
     (def given
       (interp (parse (list 'local (list list-struct length-function) prog))
-                           mtEnv))
+                           empty-env))
     (match flag
       ["" given]
       ["pp" (pretty-printing-list given)]
@@ -394,70 +388,3 @@ update-env! :: Sym Val Env -> Void
     [(list value (structV 'List _ values))
      (string-append " "(pretty-printing-list value) (pretty-printing-list-vals values))]
     [(list) "}"]))
-
-; Definition of Streams
-(def stream-data '{datatype Stream {Str hd {lazy tl}}})
-
-;; make-stream :: number/boolean/procedure/String Stream -> Stream
-(def make-stream '{define make-stream  {fun ...}})
-
-; stream-hd :: Stream -> number/boolean/procedura/String
-; Returns the head of a stream
-(def stream-hd '{define stream-hd {fun {st}
-                                       {match st
-                                         {case {Str hd tl} => hd}}}})
-
-; stream-tl :: Stream -> Stream
-; Returns the tail of a stream
-(def stream-tl '{define stream-tl {fun {st}
-                                       {match st
-                                         {case {Str hd tl} => tl}}}})
-
-; stream-take: number Stream -> list
-; Returns the firsts n values of the stream
-(def stream-take '{define stream-take
-                    {fun {n s}
-                         {match {zero? n}
-                           {case #t => {Empty}}
-                           {case #f => {Cons {stream-hd s}
-                                             {stream-take {- n 1}
-                                                          {stream-tl s}}}}}}})
-
-; stream-zipWith : Stream1 Stream2 -> Stream
-; zipWith-list function applied to Streams
-(def stream-zipWith '{define stream-zipWith
-                       {fun {f s1 s2}
-                            {stream {f {stream-hd s1}
-                                       {stream-hd s2}}
-                                    {stream-zipWith f {stream-tl s1}
-                                                    {stream-tl s2}}}}})
-
-; fibs: retorna Stream de fibonacci
-; Returns the fibonacci numbers
-(def fibs '{define fibs {stream-aux 0 1}})
-
-; stream-aux: number number -> Stream
-; auxiliary function for the fibonacci stream
-(def stream-aux '{define stream-aux
-                   {fun {f0 f1} {stream f1 {stream-aux f1 {+ f0 f1}}}}})
-
-
-; merge-sort : Stream1 Stream2 -> Stream
-; Merges two streams sorted
-(def merge-sort '{define merge-sort
-                   {fun {s1 s2}
-                        {if { > {stream-hd s1} {stream-hd s2}}
-                            {stream {stream-hd s2}
-                                    {merge-sort  s1 {stream-tl s2}}}
-                            {stream {stream-hd s1}
-                                    {merge-sort {stream-tl s1} s2}}}}})
-
-
-; stream-lib
-(def stream-lib (list stream-data
-                      stream-aux
-                      make-stream
-                      stream-hd
-                      stream-tl
-                      stream-take
-                      ))
