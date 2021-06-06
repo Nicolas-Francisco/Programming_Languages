@@ -245,3 +245,47 @@
 (test (run '{with {{f {fun {{lazy x}  y} y}}} {f {/ 1 0} 3 }})
       3)
 ;--------------------------------- Tests Streams ---------------------------------;
+; test base - estructura stream válida
+(test (run `{local {,stream-data ,make-stream ,stream-hd ,ones}
+              {Stream? ones}})
+      #t)
+
+; test de enunciado 1
+(test (run `{local {,stream-data ,make-stream ,stream-hd ,ones}
+              {stream-hd ones}})
+      1)
+
+; test de enunciado 2
+(test (run `{local {,stream-data ,make-stream
+                             ,stream-hd ,stream-tl ,ones}
+          {stream-hd {stream-tl ones}}})
+      1)
+
+; test de enunciado 3
+(test (run `{local ,stream-lib
+          {local {,ones ,stream-take}
+            {stream-take 10 ones}}} "pp")
+      "{list 1 1 1 1 1 1 1 1 1 1}")
+
+; test de enunciado 3 con ppwu
+(test (run `{local ,stream-lib
+          {local {,ones ,stream-take}
+            {stream-take 2 ones}}} "ppwu")
+      "{Cons 1{Cons 1{Empty}}}")
+
+; test de enunciado 4
+(test (run `{local ,stream-lib
+          {local {,ones ,stream-zipWith}
+            {stream-take 10
+                         {stream-zipWith
+                          {fun {n m}
+                               {+ n m}}
+                          ones
+                          ones}}}} "pp")
+      "{list 2 2 2 2 2 2 2 2 2 2}")
+
+; test de enunciado 5
+;(test (run `{local ,stream-lib
+ ;         {local {,stream-zipWith ,fibs}
+  ;          {stream-take 10 fibs}}} "pp")
+   ;   "{list 1 1 2 3 5 8 13 21 34 55}")
