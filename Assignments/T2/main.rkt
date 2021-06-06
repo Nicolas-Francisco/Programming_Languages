@@ -293,7 +293,7 @@
     ; We define the result given by the interp, using the list-struct def.
     (def given
       (interp (parse (list 'local (list list-struct length-function) prog))
-              mtEnv))
+              (mtEnv)))
     (match flag
       ["" given] ; No flag -> We simply return
       ["pp" (pretty-printing-list given)] ; pp flag, we use lists definition
