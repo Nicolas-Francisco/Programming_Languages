@@ -70,9 +70,7 @@
                                           {case {Succ m} => m}}}}}
                 {Succ? {pred {Succ {Succ {Zero}}}}}}) #t))
 
-;tests for extended MiniScheme+
-;uncomment sanity tests when you are ready
-#;(module+ sanity-tests
+(module+ sanity-tests
     (test (run '{local {{datatype Nat
                   {Zero}
                   {Succ n}}
@@ -285,7 +283,13 @@
       "{list 2 2 2 2 2 2 2 2 2 2}")
 
 ; test de enunciado 5
-;(test (run `{local ,stream-lib
- ;         {local {,stream-zipWith ,fibs}
-  ;          {stream-take 10 fibs}}} "pp")
-   ;   "{list 1 1 2 3 5 8 13 21 34 55}")
+(test (run `{local ,stream-lib
+          {local {,stream-zipWith ,fibs}
+            {stream-take 10 fibs}}} "pp")
+      "{list 1 1 2 3 5 8 13 21 34 55}")
+
+; test de enunciado 6
+(test (run `{local ,stream-lib
+               {local {,stream-take ,merge-sort ,fibs ,stream-zipWith}
+                 {stream-take 10 {merge-sort fibs fibs}}}} "pp")
+      "{list 1 1 1 1 2 2 3 3 5 5}")

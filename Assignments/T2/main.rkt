@@ -160,11 +160,11 @@
     ; application -> we just interp the fun-expr to get the λ function
     [(app fun-expr arg-expr-list)
      ; interpreting a function gives us the λ definition
-     ((interp fun-expr env) arg-expr-list env)]
+     ((strict (interp fun-expr env)) arg-expr-list env)]
     ; primitive application
     [(prim-app prim arg-expr-list)
      (apply (cadr (assq prim *primitives*))
-            (map (λ (a) (interp a env)) arg-expr-list))]
+            (map (λ (a) (strict (interp a env))) arg-expr-list))]
     ; local definitions
     [(lcal defs body)
      (def new-env (extend-env '() '() env))
@@ -172,7 +172,7 @@
      (strict (interp body new-env))] ; strict it
     ; pattern matching
     [(mtch expr cases)
-     (def value-matched (interp expr env))
+     (def value-matched (strict (interp expr env)))
      (def (cons alist body) (find-first-matching-case value-matched cases))
      (strict (interp body (extend-env (map car alist) (map cdr alist) env)))])) 
 
@@ -184,21 +184,12 @@
          (begin
            ; (printf "using cached value ~v~n" (unbox cache)) 
            (unbox cache))
-         (let ([inval (strict-stream (interp expr env))])
+         (let ([inval (interp expr env)])
            ;(printf "Forcing exprV to ~v~n" inval)
            (set-box! cache inval)
            inval))]
     ; We add the structV case, which returns the same struct but with
     ; the values maped (for structures with 2 or more arguments)
-    [(structV name variant val) (structV name variant (map strict val))]
-    [_ val]))
-
-; stric-stream : Val (exprV/closureV/numV/boolV) -> Val (closureV/numV/boolV)
-; If we are in a stream, we only have to use the strict once.
-(define (strict-stream val)
-  (match val
-    ; If we are in a stream, the expr will only use recursion once!
-    ; Therefore, the (exprV) case no longer applies.
     [(structV name variant val) (structV name variant (map strict val))]
     [_ val]))
 
@@ -215,7 +206,7 @@
 (define (interp-lazy fun-arg id env)
   (match id
     [(list 'lazy x) (exprV fun-arg env (box #f))]
-    [_ (strict (interp fun-arg env))]))
+    [_ (interp fun-arg env)]))
 
 ; interp-def :: Def Env -> Void
 (define(interp-def d env)
@@ -225,7 +216,7 @@
     [(datatype name variants)
      ;; extend environment with new definitions corresponding to the datatype
      (interp-datatype name env)
-     (for-each (λ (v) (interp-variant name v env)) variants)]))
+     (for-each (λ (v . fenv) (interp-variant name v env)) variants)]))
 
 ; interp-datatype :: String Env -> Void
 (define(interp-datatype name env)
