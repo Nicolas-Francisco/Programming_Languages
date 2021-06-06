@@ -209,10 +209,43 @@
       1)
 
 ; test de enunciado 2
+(test/exn (run '{{fun {x  y} x} 1 {/ 1 0}})
+      "division by zero")
+
+; test de enunciado 3
 (test (run '{local {{datatype T 
                   {C {lazy a}}}
                 {define x {C {/ 1 0}}}}
           {T? x}})
       #t)
 
+; test de enunciado 4
+(test/exn (run '{local {{datatype T 
+                  {C {lazy a}}}
+                {define x {C {/ 1 0}}}}
+          {match x
+            {case {C a} => a}}})
+      "division by zero")
+
+; test de enunciado 5
+(test (run '{local {{datatype T {C a {lazy b}}}
+                {define x {C  0 {+ 1 2}}}}
+               x} "pp")
+      "{C 03}")
+
+; test 6 - unbound identifier
+(test/exn (run '{{fun {x  y} x} 1 {/ 1 z}})
+          "env-lookup: no binding for identifier: z")
+
+; test 7 - dos parametros lazy
+(test (run '{{fun {x  {lazy y} {lazy z}} x} 1 {/ 1 0} {+ 1 y}})
+      1)
+
+; test 8 - definicion lazy
+(test (run '{local {{define {lazy x} {/ 1 0}}{define y {+ 1 2}}} y})
+      3)
+
+; test 9 - with con lazy
+(test (run '{with {{f {fun {{lazy x}  y} y}}} {f {/ 1 0} 3 }})
+      3)
 ;--------------------------------- Tests Streams ---------------------------------;

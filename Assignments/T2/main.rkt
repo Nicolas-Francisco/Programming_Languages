@@ -149,15 +149,16 @@
     [(id x) (env-lookup x env)]
     ; function -> the body of the function is the λ itself
     [(fun ids body)
-     (λ (arg-vals fenv)
+     (λ (arg-vals fenv) ; We save the environment of the function
        (interp body
-               (extend-env ids
+               (extend-env (map transform-id ids)
                            ; We have to check lazyness in the ids!
                            (map (λ (x id) (interp-lazy x id fenv))
                                 arg-vals ids)
                            env)))]
     ; application -> we just interp the fun-expr to get the λ function
     [(app fun-expr arg-expr-list)
+     ; interpreting a function gives us the λ definition
      ((interp fun-expr env) arg-expr-list env)]
     ; primitive application
     [(prim-app prim arg-expr-list)
@@ -167,12 +168,12 @@
     [(lcal defs body)
      (def new-env (extend-env '() '() env))
      (for-each (λ (d) (interp-def d new-env)) defs)
-     (strict (interp body new-env))]
+     (strict (interp body new-env))] ; strict it
     ; pattern matching
     [(mtch expr cases)
      (def value-matched (interp expr env))
      (def (cons alist body) (find-first-matching-case value-matched cases))
-     (strict (interp body (extend-env (map car alist) (map cdr alist) env)))]))
+     (strict (interp body (extend-env (map car alist) (map cdr alist) env)))])) 
 
 ; strict : Val (exprV/closureV/numV/boolV) -> Val (closureV/numV/boolV)
 (define (strict val)
@@ -186,10 +187,21 @@
            ;(printf "Forcing exprV to ~v~n" inval)
            (set-box! cache inval)
            inval))]
+    ; We add the structV case, which returns the same struct but with
+    ; the values maped (for structures with 2 or more arguments)
     [(structV name variant val) (structV name variant (map strict val))]
     [_ val]))
 
-; interp-lazy :: 
+; transform-id :: sym/Cons -> sym
+; returns the symbol of some id. If it comes with the flag "lazy", it returns
+; the id without it.
+(define (transform-id id)
+  (match id
+    [(list 'lazy x) x]
+    [_ id]))
+
+; interp-lazy :: Expr sym -> Expr
+; Determines if some variable must be treated using call-by-need or not.
 (define (interp-lazy fun-arg id env)
   (match id
     [(list 'lazy x) (exprV fun-arg env (box #f))]
@@ -210,7 +222,7 @@
   ; datatype predicate, eg. Nat?
   (update-env! (string->symbol (string-append (symbol->string name) "?"))
                ; We now have to interp the id of the argument given
-               (λ (v . [fenv = mtEnv])
+               (λ (v . fenv) ; Receiving a element of the env.
                  (symbol=? (structV-name (interp (first v) env))
                            name))
                env))
@@ -219,19 +231,19 @@
 (define(interp-variant name var env)
   ;; name and params of the variant or dataconstructor
   (def varname (variant-name var))
-  (def varparams (variant-params var))
+  (def varparams (variant-params var)) ; We need now the params of the variant
   ;; variant data constructor, eg. Zero, Succ
   (update-env! varname
-               (λ (args fenv)
-                 (structV name
+               (λ (args fenv) ; given the arguments and the environment of the fun.
+                 (structV name ; We create the structure, but with the values maped
                           varname
-                          (map (λ (a lazy) (interp-lazy a lazy fenv)) ; lazy checker
+                          (map (λ (a lazy) (interp-lazy a lazy fenv)) ; lazy checker!
                                args
                                varparams)))
                env)
   ;; variant predicate, eg. Zero?, Succ?
   (update-env! (string->symbol (string-append (symbol->string varname) "?"))
-               (λ (v . [fenv = mtEnv])
+               (λ (v . fenv) ; Receiving a element of the env.
                  (symbol=? (structV-variant (interp (first v) env))
                            varname))
                env))
@@ -275,18 +287,17 @@
             {case {Cons a b} => {+ 1 {length b}}}
             {case {Empty} => 0}}}})
 
-
 ;; run :: s-expr -> number/boolean/procedura/struct
 (define (run prog [flag ""])
   (begin
     ; We define the result given by the interp, using the list-struct def.
     (def given
       (interp (parse (list 'local (list list-struct length-function) prog))
-                           mtEnv))
+              mtEnv))
     (match flag
-      ["" given]
-      ["pp" (pretty-printing-list given)]
-      ["ppwu" (pretty-printing given)])))
+      ["" given] ; No flag -> We simply return
+      ["pp" (pretty-printing-list given)] ; pp flag, we use lists definition
+      ["ppwu" (pretty-printing given)]))) ; ppwu, we use structures (no lists)
 
 #|-----------------------------
 Environment abstract data type
@@ -329,7 +340,9 @@ update-env! :: Sym Val Env -> Void
     (%       ,(lambda args (apply modulo args)))
     (odd?    ,(lambda args (apply odd? args)))
     (even?   ,(lambda args (apply even? args)))
-    (/       ,(lambda args (apply / args)))
+    (/       ,(lambda args (if (equal? (second args) 0)
+                               (error "division by zero")
+                               (apply / args))))
     (=       ,(lambda args (apply = args)))
     (<       ,(lambda args (apply < args)))
     (<=      ,(lambda args (apply <= args)))
@@ -396,6 +409,7 @@ update-env! :: Sym Val Env -> Void
     [(list) "}"]))
 
 ; Definition of Streams
+; we create the structure as head and tail
 (def stream-data '{datatype Stream {Str hd {lazy tl}}})
 
 ;; make-stream :: number/boolean/procedure/String Stream -> Stream
