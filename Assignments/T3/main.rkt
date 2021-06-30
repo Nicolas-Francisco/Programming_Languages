@@ -58,7 +58,7 @@
   (boolV b)
   (ObjectV target members oenv))
 
-;; Members
+;; members
 (deftype Member
   (field id e)
   (method id vals body))
@@ -140,9 +140,7 @@ Este método no crea un nuevo ambiente.
     [(list 'seqn e1 e2) (seqn (parse e1) (parse e2))]
     [(list 'local (list e ...)  b)
      (lcal (map parse-def e) (parse b))]
-    ; To parse the object itself, we will use another function called parse-member, 
-    [(list 'object ': target e ...)
-     (object (parse target) (map parse-member e))]
+    ; To parse the object itself, we will use another function called parse-member.
     [(list 'object e ...) (object #f (map parse-member e))]
     [(list 'set id e) (set (string->symbol(string-append "f" (symbol->string id)))
                            (parse e))]
@@ -161,7 +159,7 @@ Este método no crea un nuevo ambiente.
   (match s-expr
     [(list 'define id b) (my-def id (parse b))]))
 
-;; parse-members :: s-expr -> Member
+;; parse-member :: s-expr -> Member
 ; parses a member to it's corresponding type, it adds "f" or "m" to the symbol
 ; to differentiate between fields and objects.
 (define (parse-member e)
@@ -169,16 +167,14 @@ Este método no crea un nuevo ambiente.
     [(list 'field id e)
      (if (equal? 'this id)
          (error "this is a reserved word")
-         (field
-          (string->symbol(string-append "f" (symbol->string id)))
-          (parse e)))]
+         (field (string->symbol(string-append "f" (symbol->string id)))
+                (parse e)))]
     [(list 'method id (list vals ...) body)
      (if (equal? 'this id)
          (error "this is a reserved word")
-         (method
-          (string->symbol(string-append "m" (symbol->string id)))
-          vals
-          (parse body)))]))
+         (method (string->symbol(string-append "m" (symbol->string id)))
+                 vals
+                 (parse body)))]))
 
 ;; interp :: Expr Env -> Val
 (define (interp expr env)
