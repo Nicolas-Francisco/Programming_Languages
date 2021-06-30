@@ -38,7 +38,7 @@
                (object
                 (method auto-apply (o)
                         (send o apply o))
-                (method foo 5)
+                (method foo () 5)
                 ))
              (define o (send a auto-apply
                              (object

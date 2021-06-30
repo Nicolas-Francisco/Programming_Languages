@@ -141,17 +141,15 @@ Este método no crea un nuevo ambiente.
     [(list 'local (list e ...)  b)
      (lcal (map parse-def e) (parse b))]
     ; To parse the object itself, we will use another function called parse-member.
-    [(list 'object e ...) (object #f (map parse-member e))]
-    [(list 'set id e) (set (string->symbol(string-append "f" (symbol->string id)))
-                           (parse e))]
-    [(list 'get id) (get (string->symbol(string-append "f" (symbol->string id))))]
+    [(list 'object e ...) (object #f (map parse-member e))]  ; #f for delegation
+    [(list 'set id e) (set id (parse e))] ; field
+    [(list 'get id) (get id)] ; field
     [(list 'send ob met val ...)
-     (send (parse ob) (string->symbol(string-append "m" (symbol->string met)))
-           (map parse val))]
+     (send (parse ob) met (map parse val))] ; method
     [(list 'shallow-copy expr) (shallow-copy (parse expr))]
     [(list 'deep-copy expr) (deep-copy (parse expr))]
-    [(list 'fun vals expr)
-     (object #f (list (parse-member (list 'method 'f vals expr))))]
+    [(list 'fun vals expr) ; #f for delegation
+     (object #f (list (parse-member (list 'method 'f vals expr))))] 
     [(list e ...) (send (parse (first e)) 'mf (map parse (cdr e)))]))
 
 ;; parse-def :: s-expr -> Def
@@ -160,21 +158,17 @@ Este método no crea un nuevo ambiente.
     [(list 'define id b) (my-def id (parse b))]))
 
 ;; parse-member :: s-expr -> Member
-; parses a member to it's corresponding type, it adds "f" or "m" to the symbol
-; to differentiate between fields and objects.
+; parses a member to it's corresponding type.
 (define (parse-member e)
   (match e
     [(list 'field id e)
      (if (equal? 'this id)
          (error "this is a reserved word")
-         (field (string->symbol(string-append "f" (symbol->string id)))
-                (parse e)))]
+         (field id (parse e)))]
     [(list 'method id (list vals ...) body)
      (if (equal? 'this id)
          (error "this is a reserved word")
-         (method (string->symbol(string-append "m" (symbol->string id)))
-                 vals
-                 (parse body)))]))
+         (method id vals (parse body)))]))
 
 ;; interp :: Expr Env -> Val
 (define (interp expr env)
