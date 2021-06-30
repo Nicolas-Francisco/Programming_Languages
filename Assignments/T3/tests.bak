@@ -20,7 +20,7 @@
                     x))) 5)
 
 ;; Ejemplos del enunciado
-(test (run-val '(local
+#;(test (run-val '(local
               [(define o (object
                           (field x 1)
                           (field y 2)
@@ -32,7 +32,7 @@
              (+ (send o sum 3) (send o get-y)))))
       11)
 
-(test (run-val
+#;(test (run-val
        '(local
             [(define a
                (object
@@ -48,7 +48,7 @@
           (send o foo)))
       42)
 
-(test (run-val '(local
+#;(test (run-val '(local
               [(define smart-computer (object
                                        (method secret? (something) 42)))
                (define everything (object))
@@ -56,7 +56,7 @@
                (send oracle secret? everything)))
       42)
 
-(run-val '(local
+#;(run-val '(local
               [(define seller (object
                                (method multiplier () 1)
                                (method price (item-number)
@@ -65,7 +65,7 @@
                                       (method multiplier () 2)))]
                (send broker price 3)))
 
-(test (run-val '(local
+#;(test (run-val '(local
                     ([define x (object
                                 (field z 3)
                                 (method get () (get z)))]
@@ -73,7 +73,7 @@
                   (send y get)))
       3)
 
-(test/exn (run-val '(local
+#;(test/exn (run-val '(local
                         ([define x (object
                                     (field z 3)
                                     (method get () (get z)))]
@@ -99,21 +99,21 @@
       (* (send ,x get) (send ,y get))
       ))))
 
-(test (run-val
+#;(test (run-val
        `(local ([define c ,counter])
           (seqn (send c incr)
                 (local ([define c2 (shallow-copy c)])
                   ,(incrs-multiply 'c 'c2)))))
       6)
 
-(test (run-val
+#;(test (run-val
        `(local ([define c (object : ,counter)])
           (seqn (send c incr)
                 (local ([define c2 (shallow-copy c)])
                   ,(incrs-multiply 'c 'c2)))))
       16)
 
-(test (run-val
+#;(test (run-val
        `(local ([define c (object : ,counter)])
           (seqn (send c incr)
                 (local ([define c2 (deep-copy c)])
