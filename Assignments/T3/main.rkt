@@ -198,15 +198,15 @@ Este método no crea un nuevo ambiente.
                    #t) defs)
        (interp body new-env))]
     ; We extend the interpreter with the expression
-    [(object members) (ObjectV (box (interp-members members env)) env)]
+    [(object members) (ObjectV (interp-members members env) env)]
     [(this) (if inObject
-                (env-lookup 'self env)
+                inObject
                 (error "not in an object"))]
     [(set x e) (if inObject
-                   (interp-set x e env inObject)
+                   (interp-set x (interp e env inObject) (ObjectV-members inObject))
                    (error "set used outside of an object"))]
     [(get id) (if inObject
-                  (interp-get id inObject)
+                  (interp-get id (ObjectV-members inObject))
                   (error "get used outside of an object"))]
     [(send ob-id m-id vals) (interp-send ob-id m-id vals env inObject)]))
 
@@ -218,56 +218,71 @@ Este método no crea un nuevo ambiente.
     [(cons h t)
      (match h
        ; if we are in a field
-       [(field id e) (interp-members t env (cons (cons id (interp e env)) acum))]
+       [(field id e) (interp-members t env (cons (box (cons id (interp e env))) acum))]
        ; if we are in a method
        [(method id vals body) (interp-members t env (cons (cons id (cons vals body))
                                                           acum))])]
     [empty acum]))
 
-; interp-set :: id Expr aEnv Bool -> Expr
+; interp-set :: id Expr List(members) -> Expr
 ; this function interprets the expression in the case of an 'set'
-(define (interp-set x e env inObject)
-  ; we unbox the members of the object
-  (let [(members (unbox (ObjectV-members inObject)))]
-    ; we look up for the id in the members 
-    (let [(found (assoc x members))]
-      (if found
-          ; if we found it, we set the box. if not, we have an error
-          (let [(new-members (append (list (cons x (interp e env inObject)))
-                                     members))]
-            (set-box! (ObjectV-members inObject) new-members))
-          (error "field not found")))))
+(define (interp-set x e members)
+  (match members
+    ; if we found a member, we see if it is a box (field) or not
+    [(cons member others)
+     (if (box? member)
+         (if (equal? x (car (unbox member)))
+             (set-box! member (cons x e))
+             ; if they are not the same id, we keep searching
+             (interp-set x e others))
+         ; if it is not a box, we keep searching
+         (interp-set x e others))]
+    ; if we reach the end of the list, we did not found it.
+    [(list) (error "field not found")]))
 
-; interp-get : id Bool -> Expr
+; interp-get :: id List(members) -> Expr
 ; this function interprets the expression in the case of an 'get'
-(define (interp-get id inObject)
-  ; we look up for the id in the members 
-  (let [(found (assoc id (unbox (ObjectV-members inObject))))]
-    (if found
-        (cdr found)
-        (error "field not found"))))
+(define (interp-get x members)
+  (match members
+    ; if we found a member, we see if it is a box (field) or not
+    [(cons member others)
+     (if (box? member)
+         (if (equal? x (car (unbox member)))
+             member
+             ; if they are not the same id, we keep searching
+             (interp-set x others))
+         ; if it is not a box, we keep searching
+         (interp-set x others))]
+    ; if we reach the end of the list, we did not found it.
+    [(list) (error "field not found")]))
 
 ; interp-send :: id id Expr Env Bool -> Expr
 ; this function interprets the expression in the case of an 'send'
 (define (interp-send ob-id m-id vals env inObject)
-  (begin
-    (def (cons (cons id (cons args body)) fobject)
-      (find-method m-id (interp ob-id env inObject)))
-    (interp body
-            (multi-extend-env (cons 'self args)
-                              (cons (interp ob-id env inObject)
-                                    (map (λ (e) (interp e env inObject)) args)))
-            fobject)))
+  (def (ObjectV members oenv) (interp ob-id env inObject))
+  (def (cons id body) (find-method m-id (ObjectV members oenv)))
+  (def soenv (multi-extend-env (cons 'self id)
+                               (cons (ObjectV members oenv)
+                                     (map (curryr interp env inObject) vals))
+                               oenv))
+  (interp body soenv (ObjectV members soenv)))
 
-; find-method :: Symbol ObjectV -> (method ObjectV)
+; find-method :: Symbol List(members) -> method
 ; this methods finds a method identifier in the list of members of the given ObjectV
 ; returns the method and the ObjectV where the method was found
-(define (find-method m-id object)
-  (match object
-    [(ObjectV members oenv) (def found (assoc m-id (unbox members)))
-                            (if found
-                                (cons found object)
-                                (find-method m-id members))]))
+(define (find-method m-id members)
+  (match members
+    ; if we found a member, we see if it is a box (field) or not
+    [(cons member others)
+     (if (box? member)
+         ; if it is a box, we keep searching
+         (interp-set m-id others)
+         (if (equal? m-id (car (unbox member)))
+             member
+             ; if they are not the same id, we keep searching
+             (interp-set m-id others)))]
+    ; if we reach the end of the list, we did not found it.
+    [(list) (error "field not found")]))
 
 ;; open-val :: Val -> Scheme Value
 (define (open-val v)
