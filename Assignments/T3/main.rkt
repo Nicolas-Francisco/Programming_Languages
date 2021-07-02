@@ -44,7 +44,7 @@
   (my-if c tb fb)
   (seqn expr1 expr2)
   (lcal defs body)
-  (object target members) ; From here we have the extension for objects
+  (object members) ; From here we have the extension for objects
   (this)
   (set id e)
   (get id)
@@ -56,7 +56,7 @@
 (deftype Val
   (numV n)
   (boolV b)
-  (ObjectV target members oenv))
+  (ObjectV members oenv))
 
 ;; members
 (deftype Member
@@ -123,6 +123,7 @@ Este método no crea un nuevo ambiente.
 ;; parse :: s-expr -> Expr
 (define (parse s-expr)
   (match s-expr
+    ['this (this)]
     [(? number?) (num s-expr)]
     [(? symbol?) (id s-expr)]
     [(? boolean?) (bool s-expr)]
@@ -141,7 +142,7 @@ Este método no crea un nuevo ambiente.
     [(list 'local (list e ...)  b)
      (lcal (map parse-def e) (parse b))]
     ; To parse the object itself, we will use another function called parse-member.
-    [(list 'object e ...) (object #f (map parse-member e))]  ; #f for delegation
+    [(list 'object e ...) (object (map parse-member e))]  ; #f for delegation
     [(list 'set id e) (set id (parse e))] ; field
     [(list 'get id) (get id)] ; field
     [(list 'send ob met val ...)
@@ -149,7 +150,7 @@ Este método no crea un nuevo ambiente.
     [(list 'shallow-copy expr) (shallow-copy (parse expr))]
     [(list 'deep-copy expr) (deep-copy (parse expr))]
     [(list 'fun vals expr) ; #f for delegation
-     (object #f (list (parse-member (list 'method 'f vals expr))))] 
+     (object (list (parse-member (list 'method 'f vals expr))))] 
     [(list e ...) (send (parse (first e)) 'mf (map parse (cdr e)))]))
 
 ;; parse-def :: s-expr -> Def
@@ -171,7 +172,7 @@ Este método no crea un nuevo ambiente.
          (method id vals (parse body)))]))
 
 ;; interp :: Expr Env -> Val
-(define (interp expr env)
+(define (interp expr env [inObject #f])
   (match expr
     [(num n) (numV n)]
     [(bool b) (boolV b)]
@@ -193,8 +194,83 @@ Este método no crea un nuevo ambiente.
                    (def (cons id val) (interp-def x new-env))
                    (extend-frame-env! id val  new-env)
                    #t) defs)
-       (interp body new-env))
-     ]))
+       (interp body new-env))]
+    ; We extend the interpreter with the expression
+    [(object members)(ObjectV (interp-members members env) env)]
+    [(this) (if inObject
+                (env-lookup 'self env)
+                (error "not in an object"))]
+    [(set x e) (if inObject
+                   (interp-set x e env inObject)
+                   (error "set used outside of an object"))]
+    [(get id) (if inObject
+                  (interp-get id inObject)
+                  (error "get used outside of an object"))]
+    [(send ob-id m-id vals) (interp-send ob-id m-id vals env inObject)]
+    [(shallow-copy e) (def (ObjectV members oenv) (interp e env inObject))
+                      (ObjectV (box (unbox members)) oenv)]
+    [(deep-copy e) (def object (interp e env inObject))
+                   (copy-in-deep object)]))
+
+; find-method :: Symbol ObjectV -> (method ObjectV)
+; this methods finds a method identifier in the list of members of the given ObjectV
+; returns the method and the ObjectV where the method was found
+(define (find-method m-id object)
+  (match object
+    [(ObjectV members oenv) (def found (assoc m-id (unbox members)))
+                                   (if found
+                                       (cons found object)
+                                       (find-method m-id members))]))
+
+; interp-set :: id x Expr x aEnv x Bool -> Expr
+; this function interprets the expression in the case of an 'set'
+(define (interp-set x e env inObject)
+  (let [(members (unbox (ObjectV-members inObject)))]
+    (let [(found (assoc x members))]
+      (if found
+          (let [(new-members (append (list (cons x (interp e env inObject)))
+                                     members))]
+            (set-box! (ObjectV-members inObject) new-members))
+          (error "field not found")))))
+
+; interp-get : id x Bool -> Expr
+; this function interprets the expression in the case of an 'get'
+(define (interp-get id inObject)
+  (let [(found (assoc id (unbox (ObjectV-members inObject))))]
+    (if found
+        (cdr found)
+        (error "field not found"))))
+
+; interp-send :: id x id x Expr x aEnv x Bool -> Expr
+; this function interprets the expression in the case of an 'send'
+(define (interp-send ob-id m-id vals env inObject)
+  (def (ObjectV members oenv) (interp ob-id env inObject))
+  (def (cons (cons mid (cons args body)) fobject)
+    (find-method m-id (ObjectV members oenv)))
+  (def soenv (multi-extend-env (cons 'self args)
+                               (cons (ObjectV members oenv)
+                                     (map (λ (e) (interp e env inObject)) args))
+                               oenv))
+  (interp body soenv fobject))
+
+; copy-in-deep :: ObjectV -> ObjectV
+; returns a deep-copy of the given object
+(define (copy-in-deep object)
+  (match object
+    [(ObjectV members oenv)
+     (ObjectV (copy-in-deep members) (box (unbox members)) oenv)]))
+
+; interp-members :: List(members) aEnv -> List
+; this function takes a list of members and a enviroment, and returns a dictionary of
+; the members, asociating their identifier with their meaning
+(define (interp-members members env [acum '()])
+  (match members
+    [(cons h t)
+     (match h
+       [(field id e) (interp-members t env (cons (cons id (interp e env)) acum))]
+       [(method id vals body) (interp-members t env (cons (cons id (cons vals body))
+                                                          acum))])]
+    [empty acum]))
 
 ;; open-val :: Val -> Scheme Value
 (define (open-val v)
