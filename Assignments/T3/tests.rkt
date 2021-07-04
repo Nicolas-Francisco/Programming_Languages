@@ -56,7 +56,7 @@
                (send oracle secret? everything)))
       42)
 
-(run-val '(local
+(test (run-val '(local
               [(define seller (object
                                (method multiplier () 1)
                                (method price (item-number)
@@ -64,6 +64,7 @@
                (define broker (object : seller
                                       (method multiplier () 2)))]
                (send broker price 3)))
+      6)
 
 (test (run-val '(local
                     ([define x (object
