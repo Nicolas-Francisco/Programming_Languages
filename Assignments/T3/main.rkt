@@ -178,7 +178,7 @@ Este método no crea un nuevo ambiente.
 (define (interp expr env [inObject #f])
   (match expr
     [(this) (if inObject
-                (env-lookup 'self env)
+                inObject
                 (error "not in an object"))]
     [(num n) (numV n)]
     [(bool b) (boolV b)]
@@ -213,9 +213,8 @@ Este método no crea un nuevo ambiente.
     [(get id) (if inObject
                   (interp-get id (ObjectV-members inObject))
                   (error "get used outside of an object"))]
-    [(send ob-id m-id vals) (interp-send m-id vals env
-                                         (interp ob-id env inObject)
-                                         inObject)]
+    [(send ob-id m-id vals) (let ([objV (interp ob-id env inObject)])
+                              (interp-send m-id vals env objV inObject))]
     [(shallow-copy e) (def (ObjectV target members oenv) (interp e env inObject))
                       (ObjectV target members oenv)]
     [(deep-copy e) (def object (interp e env inObject))
@@ -270,19 +269,29 @@ Este método no crea un nuevo ambiente.
 ; interp-send :: id Expr Env ObjectV ObjectV -> Expr
 ; this function interprets the expression in the case of an 'send'
 (define (interp-send m-id vals env sobject inObject)
-  (def (cons id body) (cdr (find-method m-id sobject)))
-  (let ([soenv (multi-extend-env (cons 'self id)
-                                 (cons sobject
-                                       (map (λ (x) (interp x env inObject)) vals))
-                                 (ObjectV-oenv sobject))])
-        (interp body soenv sobject)))
+  ; if we found the method in the members
+  (if (find-method m-id (ObjectV-members sobject))
+      ; we save it and interprete the body of the method with the values
+      ; and the new environment.
+      (let ([method (cdr (find-method m-id (ObjectV-members sobject)))])
+        (let ([soenv (multi-extend-env (cons 'self (car method))
+                                       (cons sobject
+                                             (map (λ (x) (interp x env inObject))
+                                                 vals))
+                                       (ObjectV-oenv sobject))])
+         (interp (cdr method) soenv sobject)))
+      ; if we could'nt found it, we keep searching in the target
+      (if (ObjectV-target sobject)
+          (interp-send m-id vals env (ObjectV-target sobject) inObject)
+          (error "method not found"))))
 
 ; find-method :: Symbol ObjectV -> method?
 ; this methods finds a method identifier in the list of members of the given ObjectV
 ; returns the method and the ObjectV where the method was found
-(define (find-method m-id obj)
-  (def (ObjectV target members oenv) (obj))
+(define (find-method m-id members)
   (match members
+    ; if we reach the end of the list, we did not found it and return False
+    ['() #f]
     ; if we found a member, we see if it is a box (field) or not
     [(cons member others)
      (if (box? member)
@@ -291,11 +300,7 @@ Este método no crea un nuevo ambiente.
          (if (equal? m-id (car member))
              member
              ; if they are not the same id, we keep searching
-             (find-method m-id others)))]
-    ; if we reach the end of the list, we search in the target object.
-    [(list) (if target
-                (find-method m-id target)
-                (error "method not found"))]))
+             (find-method m-id others)))]))
 
 ; copy-in-deep :: ObjectV -> ObjectV
 ; returns a deep-copy of the given object.
