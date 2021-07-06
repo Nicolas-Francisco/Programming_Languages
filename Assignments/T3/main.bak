@@ -172,25 +172,28 @@ Este método no crea un nuevo ambiente.
          (error "this is a reserved word")
          (method id vals (parse body)))]))
 
-;; interp :: Expr Env Bool/ObjectV Bool/ObjectV-> Val
+;; interp :: Expr Env Bool/ObjectV -> Val
 ; We add the element inObject to determine if we are inside an object. If we are not,
 ; the value of inObject is false, if we are, the value is the object itself.
-(define (interp expr env [inObject #f] [forwardObj #f])
+(define (interp expr env [inObject #f])
   (match expr
+    [(this) (if inObject
+                inObject
+                (error "not in an object"))]
     [(num n) (numV n)]
     [(bool b) (boolV b)]
-    [(binop f l r) (make-val (f (open-val (interp l env inObject forwardObj))
-                                (open-val (interp r env inObject forwardObj))))]
-    [(unop f s) (make-val (f (open-val (interp s env inObject forwardObj))))]
+    [(binop f l r) (make-val (f (open-val (interp l env inObject))
+                                (open-val (interp r env inObject))))]
+    [(unop f s) (make-val (f (open-val (interp s env inObject))))]
     [(my-if c t f)
      (def (boolV cnd) (interp c env inObject))
      (if cnd
-         (interp t env inObject forwardObj)
-         (interp f env inObject forwardObj))]
+         (interp t env inObject)
+         (interp f env inObject))]
     [(id x) (env-lookup x env)]
     [(seqn expr1 expr2) (begin
-                          (interp expr1 env inObject forwardObj)
-                          (interp expr2 env inObject forwardObj))]
+                          (interp expr1 env inObject)
+                          (interp expr2 env inObject))]
     [(lcal defs body)
      (let ([new-env (multi-extend-env '() '() env)])
        (for-each (λ(x)
@@ -199,24 +202,19 @@ Este método no crea un nuevo ambiente.
                    #t) defs)
        (interp body new-env inObject))]
     ; We extend the interpreter with the expression
-    [(this) (if forwardObj
-                forwardObj
-                (if inObject
-                    (env-lookup 'self env)
-                    (error "this used outside of an object")))]
-    [(object target members) (ObjectV (if target (interp target env) target)
+    [(object target members) (ObjectV (if target
+                                          (interp target env)
+                                          target)
                                       (interp-members members env)
                                       env)]
     [(set x e) (if inObject
-                   (interp-set x
-                               (interp e env inObject forwardObj)
-                               (ObjectV-members inObject))
+                   (interp-set x (interp e env inObject) (ObjectV-members inObject))
                    (error "set used outside of an object"))]
     [(get id) (if inObject
                   (interp-get id (ObjectV-members inObject))
                   (error "get used outside of an object"))]
-    [(send ob-id m-id vals) (let ([objV (interp ob-id env inObject forwardObj)])
-                              (interp-send m-id vals env objV inObject forwardObj))]
+    [(send ob-id m-id vals) (let ([objV (interp ob-id env inObject)])
+                              (interp-send m-id vals env objV inObject))]
     [(shallow-copy e) (def (ObjectV target members oenv) (interp e env inObject))
                       (ObjectV target members oenv)]
     [(deep-copy e) (def object (interp e env inObject))
@@ -270,7 +268,7 @@ Este método no crea un nuevo ambiente.
 
 ; interp-send :: id Expr Env ObjectV ObjectV -> Expr
 ; this function interprets the expression in the case of an 'send'
-(define (interp-send m-id vals env sobject inObject forwardObj)
+(define (interp-send m-id vals env sobject inObject)
   ; if we found the method in the members
   (if (find-method m-id (ObjectV-members sobject))
       ; we save it and interprete the body of the method with the values
@@ -281,12 +279,10 @@ Este método no crea un nuevo ambiente.
                                              (map (λ (x) (interp x env inObject))
                                                  vals))
                                        (ObjectV-oenv sobject))])
-         (interp (cdr method) soenv sobject forwardObj)))
+         (interp (cdr method) soenv sobject)))
       ; if we could'nt found it, we keep searching in the target
       (if (ObjectV-target sobject)
-          (if forwardObj
-              (interp-send m-id vals env (ObjectV-target sobject) inObject forwardObj)
-              (interp-send m-id vals env (ObjectV-target sobject) inObject sobject))
+          (interp-send m-id vals env (ObjectV-target sobject) inObject)
           (error "method not found"))))
 
 ; find-method :: Symbol ObjectV -> method?
