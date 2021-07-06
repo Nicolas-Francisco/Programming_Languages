@@ -125,3 +125,115 @@
 ;                                  SUS TESTS                                  ;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+; get-only basic test
+(test (run-val '(local
+              [(define o (object
+                          (field y 2)
+                          (method get-y () (get y))))]
+            (send o get-y))) 2)
+
+; get basic test
+(test (run-val '(send (object (field y 2) (method get-y () (get y))) get-y))
+      2)
+
+; get error test
+(test/exn (run-val '(+ 2 (get x)))
+          "get used outside of an object")
+
+; set basic test
+(test (run-val '(local
+              [(define o (object
+                          (field y 2)
+                          (method set-y (val) (set y val))
+                          (method get-y () (get y))))]
+            (seqn
+             (send o set-y 3)
+             (send o get-y))))
+      3)
+
+; get error test
+(test/exn (run-val '(set x 2))
+          "set used outside of an object")
+
+; "unavailable word" test
+(test/exn (run-val '(object (field this 3)))
+          "unavailable word")
+
+; this basic test
+(test (run-val '(local
+                  [(define o (object
+                              (method foo () (send this bar))
+                              (method bar() 22)))]
+                  (send o foo)))
+      22)
+; capture outside identifiers
+(test (run-val '(local [(define x 2)
+                        (define o (object
+                                   (field y x)
+                                   (method get-y () (get y))))]
+                  (send o get-y)))
+      2)
+
+; outside identifiers can be the same as the inside fields
+(test (run-val '(local [(define x 2)
+                         (define o (object
+                                    (field x x)
+                                    (method get-x () (get x))))]
+                        (send o get-x)))
+      2)
+
+; can't edit outside values
+(test (run-val '(local [(define x 2)
+                         (define o (object
+                                    (field y x)
+                                    (method set-y (val) (set y val))))]
+                        (seqn
+                         (send o set-y 3)
+                         x)))
+      2)
+
+; get can be used inside of a set method
+(test (run-val '(local [(define o (object
+                               (field x 2)
+                               (method get-x () (get x))
+                               (method set-x (val) (set x (+ val (get x))))))]
+           
+            (seqn
+             (send o set-x 3)
+             (send o get-x))))
+      5)
+
+; shallow-copy basic test
+(test (run-val '(local [(define o (object
+                               (field x 2)
+                               (method get-x () (get x))
+                               (method set-x (val) (set x (+ val (get x))))))
+                    (define o1 (shallow-copy o))]
+            (seqn
+             (send o set-x 3)
+             (send o1 get-x))))
+      2)
+
+; can't find fields outside object
+(test/exn (run-val '(local
+               ([define x (object
+                           (field z 3)
+                           (method get () (get u)))]
+                [define y (object : x
+			  (field u 4))])
+             (send y get)))
+          "field not found")
+
+; bonus
+(test (run-val '(local
+              [(define f (fun (x)
+                              (+ x x)))]
+              (f 5)))
+10)
+
+; λ function with 2 argumments
+(test (run-val '(local
+              [(define f (fun (x y)
+                              (+ x y)))]
+              (f 5 20)))
+25)

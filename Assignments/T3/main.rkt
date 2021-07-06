@@ -150,9 +150,10 @@ Este método no crea un nuevo ambiente.
      (send (parse ob) met (map parse val))] ; method
     [(list 'shallow-copy expr) (shallow-copy (parse expr))]
     [(list 'deep-copy expr) (deep-copy (parse expr))]
+    ; Bonus
     [(list 'fun vals expr) ; #f for delegation
      (object #f (list (parse-member (list 'method 'f vals expr))))] 
-    [(list e ...) (send (parse (first e)) 'mf (map parse (cdr e)))]))
+    [(list e ...) (send (parse (first e)) 'f (map parse (cdr e)))]))
 
 ;; parse-def :: s-expr -> Def
 (define (parse-def s-expr)
@@ -165,11 +166,11 @@ Este método no crea un nuevo ambiente.
   (match e
     [(list 'field id e)
      (if (equal? 'this id)
-         (error "this is a reserved word")
+         (error "unavailable word")
          (field id (parse e)))]
     [(list 'method id (list vals ...) body)
      (if (equal? 'this id)
-         (error "this is a reserved word")
+         (error "unavailable word")
          (method id vals (parse body)))]))
 
 ;; interp :: Expr Env Bool/ObjectV Bool/ObjectV-> Val
