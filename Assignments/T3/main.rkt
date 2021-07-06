@@ -175,6 +175,8 @@ Este método no crea un nuevo ambiente.
 ;; interp :: Expr Env Bool/ObjectV Bool/ObjectV-> Val
 ; We add the element inObject to determine if we are inside an object. If we are not,
 ; the value of inObject is false, if we are, the value is the object itself.
+; By the other hand, the element forwardObj determines if we are using delegation
+; or not, and with which object.
 (define (interp expr env [inObject #f] [forwardObj #f])
   (match expr
     [(num n) (numV n)]
@@ -199,27 +201,34 @@ Este método no crea un nuevo ambiente.
                    #t) defs)
        (interp body new-env inObject))]
     ; We extend the interpreter with the expression
-    [(this) (if forwardObj
-                forwardObj
-                (if inObject
-                    (env-lookup 'self env)
+    ; if we have a forward object, we return it, if we are not, we return
+    ; the object saved.
+    [(this) (if forwardObj forwardObj
+                (if inObject inObject
                     (error "this used outside of an object")))]
+    ; if the target is not false, we iterp. it.
     [(object target members) (ObjectV (if target (interp target env) target)
                                       (interp-members members env)
                                       env)]
+    ; if we are inside an object, we start the set case.
     [(set x e) (if inObject
                    (interp-set x
                                (interp e env inObject forwardObj)
                                (ObjectV-members inObject))
                    (error "set used outside of an object"))]
+    ; if we are inside an object, we start the get case.
     [(get id) (if inObject
                   (interp-get id (ObjectV-members inObject))
                   (error "get used outside of an object"))]
+    ; first we search for the object and give it to the iterpreter of the send
+    ; case. This object is received as a secondary object.
     [(send ob-id m-id vals) (let ([objV (interp ob-id env inObject forwardObj)])
                               (interp-send m-id vals env objV inObject forwardObj))]
-    [(shallow-copy e) (def (ObjectV target members oenv) (interp e env inObject))
-                      (ObjectV target members oenv)]
-    [(deep-copy e) (def object (interp e env inObject))
+    ; part 3 functions 
+    [(shallow-copy e) (def (ObjectV target members oenv)
+                        (interp e env inObject forwardObj))
+                      (ObjectV target (create-new-box members) oenv)]
+    [(deep-copy e) (def object (interp e env inObject forwardObj))
                    (copy-in-deep object)]))
 
 ; interp-members :: List(members) aEnv [List(members)] -> List(members)
@@ -230,7 +239,8 @@ Este método no crea un nuevo ambiente.
     [(cons h t)
      (match h
        ; if we are in a field, we save it in a box
-       [(field id e) (interp-members t env (cons (box (cons id (interp e env))) acum))]
+       [(field id e) (interp-members t env (cons (box (cons id (interp e env)))
+                                                 acum))]
        ; if we are in a method, we just save it in a pair.
        [(method id vals body) (interp-members t env (cons (cons id (cons vals body))
                                                           acum))])]
@@ -271,7 +281,7 @@ Este método no crea un nuevo ambiente.
 ; interp-send :: id Expr Env ObjectV ObjectV -> Expr
 ; this function interprets the expression in the case of an 'send'
 (define (interp-send m-id vals env sobject inObject forwardObj)
-  ; if we found the method in the members
+  ; if we found the method in the members...
   (if (find-method m-id (ObjectV-members sobject))
       ; we save it and interprete the body of the method with the values
       ; and the new environment.
@@ -282,9 +292,11 @@ Este método no crea un nuevo ambiente.
                                                  vals))
                                        (ObjectV-oenv sobject))])
          (interp (cdr method) soenv sobject forwardObj)))
-      ; if we could'nt found it, we keep searching in the target
+      ; if we could'nt found the method, we keep searching in the target
       (if (ObjectV-target sobject)
+          ; the search depends if we have to use delegation or not
           (if forwardObj
+              ; if we have delegation, we send the same object.
               (interp-send m-id vals env (ObjectV-target sobject) inObject forwardObj)
               (interp-send m-id vals env (ObjectV-target sobject) inObject sobject))
           (error "method not found"))))
@@ -307,13 +319,23 @@ Este método no crea un nuevo ambiente.
              (find-method m-id others)))]))
 
 ; copy-in-deep :: ObjectV -> ObjectV
-; returns a deep-copy of the given object.
+; returns a deep-copy of the given object
 (define (copy-in-deep object)
   (match object
     [(ObjectV target members oenv)
      (if target
-         (ObjectV (copy-in-deep target) (box (unbox members)) oenv)
-         (ObjectV #f (box (unbox members)) oenv))]))
+         (ObjectV (copy-in-deep target) (create-new-box members) oenv)
+         (ObjectV target (create-new-box members) oenv))]))
+
+; create-new-box :: List(members) -> List(members)
+; creates new boxes if the elements are fields.
+(define (create-new-box members)
+  (match members
+    ['() '()]
+    [(cons member others)
+     (if (box? member)
+         (cons (box (unbox member)) (create-new-box others))
+         (cons member (create-new-box others)))]))
 
 ;; open-val :: Val -> Scheme Value
 (define (open-val v)
